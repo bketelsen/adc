@@ -1,0 +1,14 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE||'playwright');
+const path=require('node:path');const output=path.resolve(__dirname,'../../../../work');const [base]=process.argv.slice(2);
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});await page.context().grantPermissions(['clipboard-read','clipboard-write']);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/login');await page.getByLabel('Username',{exact:true}).fill('fixture');await page.getByLabel('Password',{exact:true}).fill('ui-fixture-password');await page.getByRole('button',{name:'Sign in'}).click();
+ await page.goto(base+'/connections?org=org');await page.getByRole('button',{name:'＋ Claude',exact:true}).click();
+ const form=page.locator('#new-claude-account');await form.getByLabel('Account label').fill('Personal Claude');await form.getByRole('button',{name:'Continue to sign-in'}).click();await page.waitForURL(/claude-account/);
+ await page.getByRole('heading',{name:'Sign in with Claude Code'}).waitFor();const command=await page.locator('pre code').innerText();if(!command.includes('CLAUDE_CONFIG_DIR=')||!command.includes('auth login --claudeai'))throw Error('Native private sign-in command missing');
+ await page.getByRole('button',{name:'Copy command',exact:true}).click();await page.getByRole('button',{name:'Copied',exact:true}).waitFor();if(await page.evaluate(()=>navigator.clipboard.readText())!==command)throw Error('Command copy failed');await page.screenshot({path:path.join(output,'ui-claude-login-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Claude connection overflows phone');await page.screenshot({path:path.join(output,'ui-claude-login-mobile.png'),fullPage:true});
+ await page.getByRole('link',{name:'Check sign-in',exact:true}).click();await page.getByRole('heading',{name:'Connected',exact:true}).waitFor();await page.getByRole('heading',{name:'Available Claude models'}).waitFor();
+ await page.goto(base+'/team?org=org');await page.locator('.agent-card').filter({has:page.getByRole('heading',{name:'Developer',exact:true})}).getByRole('button',{name:'Edit configuration'}).click();
+ await page.locator('#edit-dev').getByLabel('Provider',{exact:true}).selectOption('claude');await page.locator('#edit-dev').getByLabel('Model',{exact:true}).fill('claude-opus-5');await page.locator('#edit-dev').getByRole('button',{name:'Save changes'}).click();
+ if(errors.length)throw Error(errors.join('\n'));console.log(JSON.stringify({createPersonalAccount:true,nativeSignInCommand:true,signInState:true,modelCatalog:true,explicitRoleProvider:true,mobileOverflow:false,browserErrors:errors}));
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

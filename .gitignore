@@ -1,0 +1,16 @@
+/.adc/
+/Makefile.local
+/work/
+/bin/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+/node_modules/
+
+/runtime/claude/node_modules/

@@ -1,0 +1,22 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE||'playwright');
+const path=require('node:path');const output=path.resolve(__dirname,'../../../../work');const [base,id]=process.argv.slice(2);
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/login');await page.getByLabel('Username',{exact:true}).fill('fixture');await page.getByLabel('Password',{exact:true}).fill('ui-fixture-password');await page.getByRole('button',{name:'Sign in'}).click();
+ await page.goto(base+`/proposal?org=org&id=${id}`);await page.getByText('Every 60 minutes',{exact:true}).waitFor();
+ await page.getByText('Approve recurring work',{exact:true}).click();
+ await page.getByLabel('Your subscription',{exact:true}).selectOption('account');await page.getByLabel('Authority for this assignment',{exact:true}).selectOption('observe');await page.getByRole('button',{name:'Approve and activate schedule'}).click();
+ await page.waitForURL(/\/schedules\?/);await page.getByRole('heading',{name:'Work that keeps watch.'}).waitFor();
+ await page.getByText('0 runs',{exact:true}).waitFor();await page.getByText('Recent occurrences',{exact:true}).click();await page.getByText('No occurrences yet.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Pause schedule',exact:true}).click();await page.getByRole('button',{name:'Resume schedule',exact:true}).waitFor();
+ await page.request.get(base+'/fixture-schedule-due');await page.waitForTimeout(2200);await page.getByText('0 runs',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Resume schedule',exact:true}).click();await page.getByRole('button',{name:'Pause schedule',exact:true}).waitFor();
+ await page.getByText('Approved scope',{exact:true}).click();await page.request.get(base+'/fixture-schedule-due');await page.getByText(/^1 runs?$/).waitFor();
+ if(await page.locator('details[id^="schedule-scope"]').getAttribute('open')===null)throw Error('Live update closed scope');
+ await page.getByText('Recent occurrences',{exact:true}).click();await page.locator('.schedule-card').getByText('queued',{exact:true}).waitFor();
+ await page.request.get(base+'/fixture-schedule-due');await page.waitForTimeout(2200);await page.getByText(/^1 runs?$/).waitFor();
+ await page.screenshot({path:path.join(output,'ui-schedules-desktop.png'),fullPage:true});await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Schedule page overflows phone');
+ await page.screenshot({path:path.join(output,'ui-schedules-mobile.png'),fullPage:true});
+ if(errors.length)throw Error(errors.join('\n'));console.log(JSON.stringify({recurringApproval:true,noImmediateRun:true,pauseResume:true,dueOccurrence:true,noOverlap:true,liveHistory:true,mobileOverflow:false,browserErrors:errors}));
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

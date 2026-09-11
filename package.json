@@ -1,0 +1,6 @@
+{
+  "name": "adc-browser-checks",
+  "private": true,
+  "scripts": { "test:ui": "node internal/adc/testdata/browser/ui-check.cjs" },
+  "devDependencies": { "playwright": "1.62.1" }
+}

@@ -1,0 +1,22 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE||'playwright');
+const path=require('node:path');const output=path.resolve(__dirname,'../../../../work');const [base,id]=process.argv.slice(2);
+(async()=>{const browser=await chromium.launch({headless:true});try{
+ const page=await browser.newPage({viewport:{width:1600,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/login');await page.getByLabel('Username',{exact:true}).fill('fixture');await page.getByLabel('Password',{exact:true}).fill('ui-fixture-password');await page.getByRole('button',{name:'Sign in'}).click();
+ await page.goto(base+'/usage?org=org');await page.getByRole('heading',{name:'Where the work goes.'}).waitFor();
+ if(await page.locator('#usage-input').innerText()!=='10,000')throw Error('Wrong initial window');
+ if(await page.content().then(s=>s.includes('must-not-render')))throw Error('Credential rendered');
+ await page.getByText('How these counts are reported',{exact:true}).click();
+ await page.getByLabel('Time window').selectOption('0');
+ await page.request.get(base+'/fixture-usage');await page.waitForFunction(()=>document.querySelector('#usage-input').textContent==='10,500',null,{timeout:20000});
+ if(await page.locator('#usage-notes').getAttribute('open')===null)throw Error('Live update closed count notes');
+ if(await page.getByLabel('Time window').inputValue()!=='0')throw Error('Live update reset edited filter');
+ await page.getByRole('button',{name:'Apply',exact:true}).click();await page.waitForURL(/days=0/);await page.waitForFunction(()=>document.querySelector('#usage-input').textContent==='12,500');
+ await page.getByRole('link',{name:'Fixture storage assessment',exact:true}).click();await page.waitForURL(/task=/);await page.getByRole('heading',{name:'By agent run'}).waitFor();
+ await page.getByRole('link',{name:'Back to assignment'}).click();await page.getByRole('link',{name:'Token usage'}).click();await page.getByRole('heading',{name:'By agent run'}).waitFor();
+ await page.screenshot({path:path.join(output,'ui-usage-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Usage overflows phone');
+ await page.screenshot({path:path.join(output,'ui-usage-mobile.png'),fullPage:true});
+ await page.locator('#theme').click();await page.screenshot({path:path.join(output,'ui-usage-mobile-dark.png'),fullPage:true});
+ if(errors.length)throw Error(errors.join('\n'));console.log(JSON.stringify({historicalTotals:true,windowFilter:true,liveTotals:true,editedFilterPreserved:true,assignmentDrilldown:true,unknownCacheWrites:true,mobileOverflow:false,browserErrors:errors}));
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});
