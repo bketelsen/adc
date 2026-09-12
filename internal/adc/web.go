@@ -28,6 +28,9 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Run                                                         Run
+	ActiveRuns                                                  map[string][]Run
+	ActivityURL                                                 string
 	Permissions                                                 PermissionPage
 	Claude                                                      ClaudeAccountPage
 	Codex                                                       CodexAccountPage
@@ -75,7 +78,7 @@ type Web struct {
 }
 
 func NewWeb(s *Store, e *Engine, secure bool) *Web {
-	f := template.FuncMap{"permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "agentname": func(agents []Agent, id string) string {
+	f := template.FuncMap{"agentRunView": func(a Agent, runs []Run) AgentRunView { return AgentRunView{Agent: a, Runs: runs} }, "permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "agentname": func(agents []Agent, id string) string {
 		for _, a := range agents {
 			if a.ID == id {
 				return a.Name
@@ -312,7 +315,28 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 			w.liveProposal(rw, r, p)
 			return
 		}
-	case "/team":
+	case "/run", "/live-run":
+		if !w.populateRun(&p, r.URL.Query().Get("id")) {
+			http.NotFound(rw, r)
+			return
+		}
+		p.Before, _ = strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+		if p.Before < 0 {
+			p.Before = 0
+		}
+		p.ActivityURL = "/run?org=" + url.QueryEscape(p.Org.ID) + "&id=" + url.QueryEscape(p.Run.ID)
+		w.populateTranscript(&p)
+		p.Title, p.View = p.Run.Title, "run"
+		if r.URL.Path == "/live-run" {
+			w.liveTranscript(rw, r, p)
+			return
+		}
+	case "/team", "/live-team":
+		w.populateActiveRuns(&p)
+		if r.URL.Path == "/live-team" {
+			w.liveTeamRuns(rw, r, p)
+			return
+		}
 		p.View = "team"
 		p.Title = "Your team"
 		if len(p.Accounts) > 0 {
@@ -328,7 +352,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 			p.Models, err = w.Engine.Models(ctx, selected)
 			if err != nil {
 				redact := Redactor{}
-				if value, unsealErr := w.Store.Unseal(p.Accounts[0].Secret); unsealErr == nil && value != "" {
+				if value, unsealErr := w.Store.Unseal(selected.Secret); unsealErr == nil && value != "" {
 					redact.Values = []string{value}
 				}
 				p.Error = "Could not load provider models: " + redact.Text(err.Error())
@@ -353,7 +377,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 			p.Models, err = w.Engine.Models(ctx, selected)
 			if err != nil {
 				redact := Redactor{}
-				if value, unsealErr := w.Store.Unseal(p.Accounts[0].Secret); unsealErr == nil && value != "" {
+				if value, unsealErr := w.Store.Unseal(selected.Secret); unsealErr == nil && value != "" {
 					redact.Values = []string{value}
 				}
 				p.Error = "Could not load provider models: " + redact.Text(err.Error())
@@ -379,6 +403,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.Runs = taskRuns(w.Store, id)
 		p.Agents = append(list[Agent](w.Store, "agent", p.Task.Org), list[Agent](w.Store, "guide", p.Task.Org)...)
 		p.Before, _ = strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+		p.ActivityURL = "/task?org=" + url.QueryEscape(p.Org.ID) + "&id=" + url.QueryEscape(id)
 		p.Events = w.Store.EventsBefore(id, p.Before)
 		p.Older = w.Store.OlderEvents(id, p.Events)
 		p.Documents = taskDocs(w.Store, id)

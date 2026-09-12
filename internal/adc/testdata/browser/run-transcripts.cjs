@@ -1,0 +1,42 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE || 'playwright');
+const path=require('node:path');
+const [base,run]=process.argv.slice(2);
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});
+ await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
+ const page=await context.newPage(), team=await context.newPage();
+ const errors=[];for(const p of [page,team])p.on('pageerror',e=>errors.push(e.message));
+ await team.goto(base+'/team?org=org');
+ const active=team.locator('#active-runs-boss');
+ if(await active.locator('a').count()!==2)throw Error('Missing concurrent agent instances');
+ await page.goto(base+'/task?org=org&id=task');
+ await page.locator(`#runlist a[href="/run?org=org&id=${run}"]`).click();
+ await page.locator('#run-header').waitFor();
+ if((await page.locator('#timeline').textContent()).includes('Private sibling'))throw Error('Sibling transcript leaked');
+ await page.getByRole('link',{name:'← Older activity',exact:true}).click();
+ await page.getByText('Selected history 000',{exact:true}).waitFor();
+ if(!page.url().includes('/run?')||!page.url().includes('id='+run))throw Error('History left selected run');
+ if(await page.locator('[data-init*="live-run"]').count())throw Error('Historical view is not pinned');
+ await page.getByRole('link',{name:'Return to live activity →',exact:true}).click();
+ await page.locator('#tool-evidence-panel > summary').click();
+ await page.locator('summary').filter({hasText:'inspect_fixture'}).click();
+ await page.request.get(base+'/fixture-advance');
+ await page.getByText('Selected live update',{exact:true}).waitFor();
+ await page.getByText('Fixture evidence ready',{exact:true}).waitFor();
+ if(await page.locator('#tool-evidence-panel').getAttribute('open')===null)throw Error('SSE collapsed evidence');
+ await team.waitForFunction(()=>document.querySelectorAll('#active-runs-boss a').length===1);
+ if((await page.locator('#timeline').textContent()).includes('Private sibling'))throw Error('Live sibling transcript leaked');
+ const dir=path.resolve(__dirname,'../../../../work');
+ await page.screenshot({path:path.join(dir,'ui-run-transcript-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile horizontal overflow');
+ if(await page.locator('#timeline').evaluate(el=>el.clientHeight>innerHeight*.56))throw Error('Unbounded mobile transcript');
+ await page.screenshot({path:path.join(dir,'ui-run-transcript-mobile.png'),fullPage:true});
+ await team.setViewportSize({width:390,height:844});
+ if(await team.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile team overflow');
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('PASS: rail links, isolated live transcript, preserved evidence, paginated history, concurrent Team links, live completion, phone layout');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});

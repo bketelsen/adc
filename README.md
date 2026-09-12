@@ -26,6 +26,8 @@ In **Team**, choose **Propose a team**, describe what needs looking after, and s
 
 Assign an outcome to an accountable agent. The team delegates work, saves documents, obtains cross-family review, and returns findings for correction. Select a document passage to discuss it; the revision selector preserves access to earlier drafts. Human steering and decisions are shared within the organization. External PR publication requires a separate explicit decision.
 
+In **Who’s on it**, choose **View transcript** to follow one agent’s recorded messages and tool activity live. **Team** cards also link to each active run, including concurrent instances of the same agent. Older transcript history stays available.
+
 Open **Proposals** to review agent-suggested follow-ups. Edit or discuss a proposal before accepting it; acceptance asks for your subscription, accountable agent, authority and exact scope. **Ask for proposals** uses existing document evidence without executing the suggestions. For recurring proposals, choose an interval, daily time or weekly time: approval activates the schedule without starting an immediate run. **Schedules** shows its next occurrence, funding human, scope and history, with pause/resume controls. See [work proposals](docs/design/work-proposals.md) and [standing work](docs/design/standing-work.md).
 
 Open **Usage** for reported input/output and cache tokens by model, subscription and assignment. Choose a rolling time window or all history, then open an assignment for its agent-run breakdown. Each assignment also has a **Token usage** link. Missing counts stay unknown, and partial totals are identified. See [usage accounting](docs/design/usage.md).

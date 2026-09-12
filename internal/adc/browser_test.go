@@ -77,3 +77,43 @@ func TestBrowserWorkflow(t *testing.T) {
 		t.Fatal("human decision was not saved")
 	}
 }
+
+func TestBrowserRunTranscripts(t *testing.T) {
+	node := os.Getenv("ADC_BROWSER_NODE")
+	if node == "" {
+		t.Skip("set ADC_BROWSER_NODE for isolated transcript browser checks")
+	}
+	s, e, task, run := fixture(t)
+	transcriptLogin(t, s)
+	sibling := run
+	sibling.ID = "sibling"
+	sibling.Title = "Concurrent fixture"
+	must(t, s.Put("run", sibling.Org, sibling.Task, sibling.State, sibling.ID, sibling))
+	for i := 0; i < 260; i++ {
+		s.Log(task.Org, task.ID, run.ID, "message", fmt.Sprintf("Selected history %03d", i))
+	}
+	s.Log(task.Org, task.ID, sibling.ID, "message", "Private sibling activity")
+	trace := ToolTrace{ID: "selected-trace", Org: task.Org, Task: task.ID, Run: run.ID, Name: "inspect_fixture", State: "running", Arguments: "{}", At: now()}
+	must(t, s.Put("tooltrace", trace.Org, trace.Task, trace.State, trace.ID, trace))
+	mux := http.NewServeMux()
+	mux.Handle("/", NewWeb(s, e, false).Handler())
+	mux.HandleFunc("/fixture-advance", func(rw http.ResponseWriter, r *http.Request) {
+		s.Log(task.Org, task.ID, run.ID, "message", "Selected live update")
+		s.Log(task.Org, task.ID, sibling.ID, "message", "Private sibling update")
+		updated := trace
+		updated.State = "complete"
+		updated.Result = "Fixture evidence ready"
+		_ = s.Put("tooltrace", updated.Org, updated.Task, updated.State, updated.ID, updated)
+		finished := sibling
+		finished.State = "complete"
+		_ = s.Put("run", finished.Org, finished.Task, finished.State, finished.ID, finished)
+		rw.WriteHeader(204)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	script, err := filepath.Abs("testdata/browser/run-transcripts.cjs")
+	must(t, err)
+	out, err := exec.Command(node, script, server.URL, run.ID).CombinedOutput()
+	t.Log(string(out))
+	must(t, err)
+}

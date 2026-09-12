@@ -20,20 +20,24 @@ func TestLiveProtectedCodeAudit(t *testing.T) {
 	if os.Getenv("ADC_LIVE_PERMISSION_AUDIT") != "1" {
 		t.Skip("set ADC_LIVE_PERMISSION_AUDIT=1 to request independent Claude code review")
 	}
+	files := []string{"accounts.go", "workspace_executor_linux.go", "protected_code_linux.go", "protected_tools_linux.go", "protected_provider.go", "mcp_gateway.go", "gateway_process_linux.go", "tool_permissions.go", "access_requests.go", "permissions_web.go", "model.go", "store.go", "provider_tools.go", "engine.go", "code.go", "codex_run.go", "claude-bridge.mjs", "recovery.go", "schedules.go", "proposals.go", "web.go", "workspace_executor_linux_test.go", "access_requests_test.go", "tool_permissions_test.go", "mcp_gateway_test.go", "protected_code_linux_test.go"}
+	prompt := "Focused independent re-review, at most THREE adc_workspace calls followed immediately by adc_review_report. Inspect tool_permissions.go, access_requests.go, access_requests_test.go and templates if needed (only source files listed are available). Your prior review confirmed three fixes: whole-object exact arguments, revocation epochs, and refusal to reset stale tool policies. It then found that ResolveAccess standing approvals appended exact rules into global policy.Constraints, making different approved targets incompatible and disrupting other assignments. The correction adds ToolPolicy.StandingRules as alternative grant rules below unchanged installation Constraints. initialCapabilities emits one grant per rule intersected with the installation ceiling. Adding standing X then Y changes no old assignment snapshots; both options apply to new assignments. If policy was already allow with no standing rules (unrestricted within its ceiling), adding a narrower standing approval leaves that broader reviewed policy intact. A human policy-form save explicitly replaces standing rules with the reviewed settings; the UI labels this replacement. Epoch/class/fingerprint checks remain unchanged. The new regression TestStandingApprovalsAreAlternativesUnderInstallationCeiling proves X and Y both work for new work, existing X work retains X and cannot acquire Y, the global ceiling survives, and policy history is recorded. Validate this correction and look for concrete remaining P1/P2 bugs in the changed grant logic. The prior sandbox/gateway review had no concrete findings. Do not repeat a broad audit or request new tasks. Finish after the relevant reads with pass or changes and actionable evidence."
+	runIndependentCodeAudit(t, files, prompt, "permissions-independent-review.json")
+}
+
+func runIndependentCodeAudit(t *testing.T, files []string, prompt, output string) {
+	t.Helper()
 	home := os.Getenv("ADC_LIVE_CLAUDE_HOME")
 	if home == "" {
 		t.Fatal("explicitly connected Claude account required")
 	}
 	x := executorFixture(t)
-	files := []string{"accounts.go", "workspace_executor_linux.go", "protected_code_linux.go", "protected_tools_linux.go", "protected_provider.go", "mcp_gateway.go", "gateway_process_linux.go", "tool_permissions.go", "access_requests.go", "permissions_web.go", "model.go", "store.go", "provider_tools.go", "engine.go", "code.go", "codex_run.go", "claude-bridge.mjs", "recovery.go", "schedules.go", "proposals.go", "web.go", "workspace_executor_linux_test.go", "access_requests_test.go", "tool_permissions_test.go", "mcp_gateway_test.go", "protected_code_linux_test.go"}
 	for _, name := range files {
 		b, err := os.ReadFile(name)
 		must(t, err)
+		must(t, os.MkdirAll(filepath.Dir(filepath.Join(x.Workspace, name)), 0700))
 		must(t, os.WriteFile(filepath.Join(x.Workspace, name), b, 0600))
 	}
-	plan, err := os.ReadFile("../../docs/plans/permissions.md")
-	must(t, err)
-	must(t, os.WriteFile(filepath.Join(x.Workspace, "permissions-plan.md"), plan, 0600))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	client, err := startClaude(ctx, home)
@@ -69,7 +73,7 @@ func TestLiveProtectedCodeAudit(t *testing.T) {
 		defer cancel()
 		_ = client.Call(c, "thread/unsubscribe", map[string]string{"threadId": start.Thread.ID}, nil)
 	}()
-	prompt := "Focused independent re-review, at most THREE adc_workspace calls followed immediately by adc_review_report. Inspect tool_permissions.go, access_requests.go, access_requests_test.go and templates if needed (only source files listed are available). Your prior review confirmed three fixes: whole-object exact arguments, revocation epochs, and refusal to reset stale tool policies. It then found that ResolveAccess standing approvals appended exact rules into global policy.Constraints, making different approved targets incompatible and disrupting other assignments. The correction adds ToolPolicy.StandingRules as alternative grant rules below unchanged installation Constraints. initialCapabilities emits one grant per rule intersected with the installation ceiling. Adding standing X then Y changes no old assignment snapshots; both options apply to new assignments. If policy was already allow with no standing rules (unrestricted within its ceiling), adding a narrower standing approval leaves that broader reviewed policy intact. A human policy-form save explicitly replaces standing rules with the reviewed settings; the UI labels this replacement. Epoch/class/fingerprint checks remain unchanged. The new regression TestStandingApprovalsAreAlternativesUnderInstallationCeiling proves X and Y both work for new work, existing X work retains X and cannot acquire Y, the global ceiling survives, and policy history is recorded. Validate this correction and look for concrete remaining P1/P2 bugs in the changed grant logic. The prior sandbox/gateway review had no concrete findings. Do not repeat a broad audit or request new tasks. Finish after the relevant reads with pass or changes and actionable evidence."
+
 	must(t, client.Call(ctx, "turn/start", map[string]any{"threadId": start.Thread.ID, "input": []map[string]string{{"type": "text", "text": prompt}}}, nil))
 	for {
 		select {
@@ -102,7 +106,7 @@ func TestLiveProtectedCodeAudit(t *testing.T) {
 						t.Fatal("invalid audit verdict")
 					}
 					b, _ := json.MarshalIndent(review, "", "  ")
-					must(t, os.WriteFile("../../work/permissions-independent-review.json", b, 0600))
+					must(t, os.WriteFile(filepath.Join("../../work", output), b, 0600))
 					t.Logf("Independent Claude review: %s\n%s", review.Verdict, review.Findings)
 					if review.Verdict != "pass" {
 						t.Fatal("independent review requested corrections")
@@ -118,4 +122,12 @@ func TestLiveProtectedCodeAudit(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestLiveTranscriptCodeAudit(t *testing.T) {
+	if os.Getenv("ADC_LIVE_TRANSCRIPT_AUDIT") != "1" {
+		t.Skip("set ADC_LIVE_TRANSCRIPT_AUDIT=1 for independent Claude review")
+	}
+	runIndependentCodeAudit(t, []string{"run_transcripts.go", "run_transcripts_test.go", "web.go", "activity.go", "store.go", "model.go", "templates/run.html", "templates/app.html", "static/app.css", "browser_test.go", "testdata/browser/run-transcripts.cjs"},
+		"Review this change: read-only live agent transcripts at /run and /live-run, links from assignment runlist, and active per-agent runs on /team with /live-team SSE. Scope primarily run_transcripts.go, its tests, route integration in web.go, and run.html/app.html templates. Check org/auth isolation, pagination filtering before limits, concurrent worker instances, read-only behavior, live HTML updates and escaping. Existing activity renderer, generic route/auth code and task UI are preexisting. Team active means running/queued/waiting/blocked on a nonpaused, noncancelled, nonready assignment. Recorded messages and tool activity stream, not raw token deltas. Inspect source with at most FOUR workspace calls, then adc_review_report with pass or changes and concrete P1/P2 bugs. Do not audit unrelated app capabilities.", "transcripts-independent-review.json")
 }

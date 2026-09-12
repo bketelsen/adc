@@ -184,3 +184,13 @@ The qualifications used synthetic data and disposable repositories, with no real
 
 
 Deployment: the verified binary is running at localhost:8789, PID 88706 (exec session 6433). Its executable hash matches `bin/adc`. HTTP serves the embedded permission UI/styles and redirects anonymous users to sign-in. All 20 organization/role/account/connection/schedule configuration records match their pre-start digest. Both organizations remain advisory, there are no active real runs, and the existing weekly schedule remains at 2026-09-14T13:00:00Z with zero occurrences. No working tool policies were auto-approved. No disposable Incus qualification instance remains.
+
+## Per-agent live transcripts
+
+Added read-only `/run` and `/live-run` views, direct links from “Who’s on it”, and live per-agent active-run lists on Team cards. Separate concurrent instances remain separately linked. Transcript events are filtered by organization, assignment and run before the 250-event history limit; tool evidence is similarly scoped before its 100-record limit. Historical pages remain pinned. The view reflects persisted messages and tool events as providers report them, not raw token streaming.
+
+`make verify` passed, including race tests. New tests cover scoped pagination amid busy sibling activity, escaped output, organization boundaries, read-only viewing, concurrent instances and SSE termination after membership revocation. Isolated Playwright checks passed for both links, live updates, history navigation, preserved expanded tool evidence, completed-run removal from Team cards, and phone layout. The existing assignment/document browser workflow also passed. Fixture screenshots are in the ignored `work/ui-run-transcript-{desktop,mobile}.png` files.
+
+Deployment was held while Brian’s run was active. After his explicit restart authorization, the old service stopped gracefully and `make serve` started PID 282283 on port 8789. The running executable matches the verified build; new transcript/active-run styles are served and transcript/Team routes require sign-in.
+
+Independent direct Claude Opus 5 review returned PASS. Follow-up refinements label the tool panel’s latest-100 window, store only fragment hashes for SSE deduplication, and correct a preexisting model-catalog error path to redact the selected account’s secret. Review suggestions about history subscriptions and missing stream tests were checked against the passing browser and membership-revocation tests. Team configuration changes still require a reload; active-run updates are live for the displayed permanent-agent cards. Temporary team designers remain accessible through their assignment rail.
