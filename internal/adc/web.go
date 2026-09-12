@@ -28,6 +28,8 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Selfhosted                                                  SelfhostedAccountPage
+	Plan                                                        ExecutionPlan
 	Run                                                         Run
 	ActiveRuns                                                  map[string][]Run
 	ActivityURL                                                 string
@@ -255,6 +257,11 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	case "/live-work":
 		w.liveWork(rw, r, p)
 		return
+	case "/selfhosted-account":
+		if err := w.selfhostedAccountPage(r, &p); err != nil {
+			http.NotFound(rw, r)
+			return
+		}
 	case "/claude-account":
 		if err := w.claudeAccountPage(r, &p); err != nil {
 			http.NotFound(rw, r)
@@ -400,6 +407,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		_ = w.Store.Get(p.Task.Org, &p.Org)
 		p.Title = p.Task.Title
 		p.View = "task"
+		p.Plan = w.Engine.inspectPlan(w.Store.taskPlan(id))
 		p.Runs = taskRuns(w.Store, id)
 		p.Agents = append(list[Agent](w.Store, "agent", p.Task.Org), list[Agent](w.Store, "guide", p.Task.Org)...)
 		p.Before, _ = strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
@@ -524,6 +532,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 		return w.claudeLogout(r, p)
 	case "/codex-login":
 		return w.codexLoginAction(r, p)
+	case "/plan-action":
+		return w.executionPlanAction(r, p)
 	case "/schedule-action":
 		return w.scheduleAction(r, p)
 	case "/proposal-brief":
@@ -577,6 +587,28 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if x.Name == "" {
 			return errors.New("Connection name is required")
 		}
+		if x.Transport == "github" {
+			if strings.TrimSpace(f("github_token")) == "" {
+				return errors.New("Provide a GitHub access token for this connection")
+			}
+			x.Command, x.URL = "", ""
+			x.Args = strings.Fields(f("github_scopes"))
+			if len(x.Args) == 0 || len(x.Args) > 100 {
+				return errors.New("List 1–100 allowed owner/repository or owner/* scopes")
+			}
+			for _, scope := range x.Args {
+				owner, repo, ok := strings.Cut(scope, "/")
+				if !ok || (repo != "*" && !validGitHubRepository(owner, repo)) || !validGitHubRepository(owner, "scope") {
+					return errors.New("Use owner/repository or owner/* for each GitHub scope")
+				}
+			}
+			sealed, err := s.Seal(strings.TrimSpace(f("github_token")))
+			if err != nil {
+				return err
+			}
+			x.Headers["GitHubToken"] = sealed
+			return s.Put("connection", x.Org, "", "", x.ID, x)
+		}
 		if x.Transport == "stdio" {
 			if x.Command == "" {
 				return errors.New("Command is required")
@@ -616,7 +648,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if s.Get(f("account"), &guideAccount) != nil || guideAccount.User != p.User.ID {
 			return errors.New("select your own subscription")
 		}
-		guide := Agent{Provider: providerName(guideAccount.Provider), ID: ID(), Org: p.Org.ID, Name: "Team designer", Description: "Discover the organization and propose a team of permanent agents for human approval. Choose models from the supplied account catalog. Every proposed agent needs a category, explicit provider (copilot, codex or claude), model and authority. Use available_models_by_provider to pair models with the correct provider. Give proposal roles unique names and optional unique local IDs; ReportsTo may reference another proposed role by name or local ID, or an existing supervisor ID. Do not create permanent agents yourself.", Category: "supervision", Model: f("model"), Authority: "observe"}
+		guide := Agent{Provider: providerName(guideAccount.Provider), ID: ID(), Org: p.Org.ID, Name: "Team designer", Description: "Discover the organization and propose a team of permanent agents for human approval. Choose models from the supplied account catalog. Every proposed agent needs a category, explicit provider (copilot, codex, claude or selfhosted), model and authority. Use available_models_by_provider to pair models with the correct provider. Give proposal roles unique names and optional unique local IDs; ReportsTo may reference another proposed role by name or local ID, or an existing supervisor ID. Do not create permanent agents yourself.", Category: "supervision", Model: f("model"), Authority: "observe"}
 		if err := s.Put("guide", guide.Org, "", "", guide.ID, guide); err != nil {
 			return err
 		}
@@ -777,6 +809,9 @@ func (w *Web) action(r *http.Request, p Page) error {
 			if s.Get(id, &run) != nil || run.Task != t.ID {
 				return errors.New("Run unavailable")
 			}
+			if run.Superseded {
+				return errors.New("This attempt was superseded; steer the current plan step or its supervisor")
+			}
 			message := p.User.Name + ": " + f("message")
 			if doc := f("document"); doc != "" {
 				var d Document
@@ -831,7 +866,7 @@ func validateAgent(s *Store, a Agent) error {
 		return errors.New("Name and responsibility description are required")
 	}
 	if Family(a.Model) == "" {
-		return errors.New("Choose an explicit GPT, Claude, Gemini or Grok model")
+		return errors.New("Choose an explicit model with a recognized family from your provider catalog")
 	}
 	if authorityRank(a.Authority) < 0 {
 		return errors.New("Choose a supported autonomy policy")
@@ -876,6 +911,12 @@ func (w *Web) live(rw http.ResponseWriter, r *http.Request, p Page) {
 	defer tick.Stop()
 	last := map[string]string{}
 	for {
+		user, _ := w.user(r)
+		if user.ID != p.User.ID || !w.member(user.ID, p.Org.ID) {
+			return
+		}
+
+		p.Plan = w.Engine.inspectPlan(w.Store.taskPlan(p.Task.ID))
 		p.Events = w.Store.Events(p.Task.ID)
 		p.Older = w.Store.OlderEvents(p.Task.ID, p.Events)
 		p.Runs = taskRuns(w.Store, p.Task.ID)
@@ -886,7 +927,7 @@ func (w *Web) live(rw http.ResponseWriter, r *http.Request, p Page) {
 		p.Traces = taskTraces(w.Store, p.Task.ID)
 		_ = w.Store.Get(p.Task.ID, &p.Task)
 		var b bytes.Buffer
-		for _, name := range []string{"taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"} {
+		for _, name := range []string{"execution-plan", "taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"} {
 			b.Reset()
 			if err := w.templates.ExecuteTemplate(&b, name, p); err != nil {
 				return

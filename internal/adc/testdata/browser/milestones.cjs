@@ -1,0 +1,42 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE || 'playwright');
+const path=require('node:path'),fs=require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+ const base=process.argv[2],context=await browser.newContext({viewport:{width:1440,height:1100}});
+ await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/task?org=org&id=task');
+ const detail=page.locator('#milestone-R1-gate');
+ await detail.locator('summary').click();
+ await detail.getByLabel('Observation',{exact:true}).fill('My observation in progress');
+ await detail.getByLabel('Source reference').fill('fixture:human-observation/456');
+ await detail.getByLabel('Observed at (UTC)').fill(new Date().toISOString().slice(0,19));
+ await page.request.get(base+'/fixture-evidence');
+ await detail.getByText(/Recorded by human:another-human/).waitFor();
+ if(await detail.getByLabel('Observation',{exact:true}).inputValue()!=='My observation in progress')throw Error('SSE erased observation');
+ if(await detail.locator('[name=evidence_revision]').inputValue()!=='0')throw Error('SSE rebased an unsaved human attestation');
+ await detail.getByRole('button',{name:'Record human evidence'}).click();
+ await page.getByText(/milestone evidence changed; inspect latest evidence/).waitFor();
+ await page.goto(base+'/task?org=org&id=task');
+ await detail.locator('summary').click();
+ await detail.getByLabel('Observation',{exact:true}).fill('Fixture observation independently confirmed by human');
+ await detail.getByLabel('Source reference').fill('fixture:human-observation/456');
+ await detail.getByLabel('Observed at (UTC)').fill(new Date().toISOString().slice(0,19));
+ await detail.getByRole('button',{name:'Record human evidence'}).click();
+ await detail.locator('summary').click();
+ await detail.getByText(/revision 2/).waitFor();
+ if(await page.locator('#plan-step-R2 .plan-links').count())throw Error('Human input bypassed independent review');
+ await page.request.get(base+'/fixture-review');
+ await page.locator('#plan-step-R2').getByRole('link',{name:'Worker transcript →',exact:true}).waitFor();
+ const dir=path.resolve(__dirname,'../../../../work');fs.mkdirSync(dir,{recursive:true});
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:path.join(dir,'ui-milestones-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone milestone form overflows');
+ await page.screenshot({path:path.join(dir,'ui-milestones-mobile.png'),fullPage:true});
+ await detail.getByRole('button',{name:'Withdraw evidence'}).click();
+ await detail.locator('summary').filter({hasText:'withdrawn'}).waitFor();
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('PASS: live human evidence, stale edit protection, independent review gate, withdrawal, phone layout');
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

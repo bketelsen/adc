@@ -28,6 +28,8 @@ Assign an outcome to an accountable agent. The team delegates work, saves docume
 
 In **Who’s on it**, choose **View transcript** to follow one agent’s recorded messages and tool activity live. **Team** cards also link to each active run, including concurrent instances of the same agent. Older transcript history stays available.
 
+For multi-step assignments, the supervisor can save an **Execution plan** with named steps, owners, independent reviewers and prerequisites. Steps can require reviewed code, merge/release/canary observations or human evidence. ADC starts eligible steps automatically after their dependencies meet those requirements and pass review; the assignment page shows progress and blocker reasons with transcript links. Read-only MCP observations and timers can wait durably without occupying agent slots, then resume for independent review. Draft plans can be discussed before starting. Activation uses the assignment’s existing authority and subscriptions. See [execution plans](docs/design/execution-plans.md) for the workflow and its limits.
+
 Open **Proposals** to review agent-suggested follow-ups. Edit or discuss a proposal before accepting it; acceptance asks for your subscription, accountable agent, authority and exact scope. **Ask for proposals** uses existing document evidence without executing the suggestions. For recurring proposals, choose an interval, daily time or weekly time: approval activates the schedule without starting an immediate run. **Schedules** shows its next occurrence, funding human, scope and history, with pause/resume controls. See [work proposals](docs/design/work-proposals.md) and [standing work](docs/design/standing-work.md).
 
 Open **Usage** for reported input/output and cache tokens by model, subscription and assignment. Choose a rolling time window or all history, then open an assignment for its agent-run breakdown. Each assignment also has a **Token usage** link. Missing counts stay unknown, and partial totals are identified. See [usage accounting](docs/design/usage.md).
@@ -51,6 +53,11 @@ To add direct Claude, open **Connections → + Claude**, create your personal co
 - Approved standing work with explicit cadence/timezone, a designated personal subscription, persisted occurrences, overlap prevention and pause/resume.
 - Organization-scoped usage views with historical telemetry, live updates, time windows, assignment/run drilldown and explicit unknown/partial counts.
 - Registered code artifacts tied to clean commits and rechecked before review acceptance and task completion.
+- Repository/integration ledgers with exact consumed commits, environment pins and required artifact-bound validation, including observed protected commands and stale-check gating.
+- Concrete operational approvals for protected execution plans, bound to step/attempt and reviewed evidence; stale proposals recover without widening access.
+- Optional preflight checks for runtimes, repository access, worker/reviewer models and isolated test resources, with automatic recovery before model dispatch.
+- Scoped GitHub connections for credential-free private fetch into protected workers and exact reviewed-commit draft delivery, with interruption reconciliation; mutation qualification uses isolated Git/HTTP fixtures.
+- Self-hosted OpenAI-compatible model connections with optional sealed API keys, catalog discovery, function calling, usage and protected workspace/MCP tools.
 
 The first real Frostyard website assignment delivered two reviewed draft PRs, subsequently merged by Brian. The bounded read-only TrueNAS inventory also completed with independent verification. Those qualifications do not complete the remaining roadmap. See [qualification and limitations](docs/testing/qualification.md).
 

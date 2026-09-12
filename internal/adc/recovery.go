@@ -52,6 +52,12 @@ func (e *Engine) refreshTaskStates() {
 				state = "queued"
 			}
 		}
+		for _, r := range taskRuns(s, task.ID) {
+			if r.State == "waiting" && e.waitingHumanMilestone(r) {
+				state = "needs input"
+				break
+			}
+		}
 		for _, d := range taskDecisions(s, task.ID) {
 			if d.State == "pending" {
 				state = "needs input"
@@ -76,6 +82,9 @@ func (e *Engine) Reassign(parent Run, id, agent, prompt string) (Run, error) {
 	if s.Get(id, &target) != nil || target.Parent != parent.ID || target.Task != parent.Task {
 		return Run{}, fmt.Errorf("only directly delegated work may be reassigned")
 	}
+	if target.Superseded {
+		return Run{}, fmt.Errorf("this plan attempt was superseded; inspect adc_status and use its current run")
+	}
 	if target.Reassignments >= 3 {
 		return Run{}, fmt.Errorf("three recovery approaches have been attempted; present the evidence with adc_decision before further recovery")
 	}
@@ -85,6 +94,16 @@ func (e *Engine) Reassign(parent Run, id, agent, prompt string) (Run, error) {
 	var a Agent
 	if s.Get(agent, &a) != nil || a.Org != parent.Org {
 		return Run{}, fmt.Errorf("select an expert in this organization")
+	}
+	for _, step := range s.taskPlan(parent.Task).Steps {
+		if step.Run == target.ID {
+			var reviewer Run
+			if s.Get(step.Review, &reviewer) == nil {
+				if err := CanReview(a.Model, reviewer.Model); err != nil {
+					return Run{}, fmt.Errorf("reassignment would conflict with the plan's independent reviewer: %w", err)
+				}
+			}
+		}
 	}
 	if target.ReviewOf != "" {
 		var implementation Run

@@ -79,3 +79,11 @@ html[data-theme=dark]{color-scheme:dark;--bg:#171e2a;--surface:#202938;--surface
 .agent-active-runs h3{font-size:.8rem;margin:0 0 6px}.agent-active-runs ul{list-style:none;padding:0;margin:0;max-height:12rem;overflow:auto}
 .agent-active-runs li a{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;color:var(--accent);font-size:.82rem}
 .agent-active-runs li a>span:first-child{min-width:0;overflow-wrap:anywhere}.agent-active-runs .run-state{flex-shrink:0}
+
+#execution-plan:has(.plan-heading){margin:24px 0;border-block:1px solid var(--line);padding:22px 0}.plan-heading,.plan-step-heading{display:flex;align-items:start;justify-content:space-between;gap:14px}.plan-heading h2{font-size:1.15rem;margin:8px 0}.plan-source{overflow-wrap:anywhere;white-space:pre-wrap}.plan-steps{list-style:none;margin:20px 0 0;padding:0;max-height:52dvh;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}.plan-steps>li{padding:18px 8px 18px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.plan-step-heading strong{font-size:.9rem}.plan-steps p{font-size:.83rem;margin:9px 0}.plan-dependencies{color:var(--muted)}.plan-dependencies a,.plan-links a{color:var(--accent)}.plan-reason{border-left:2px solid var(--line);padding-left:10px}.plan-steps summary{cursor:pointer;font-size:.85rem;min-height:28px}.plan-steps details p{white-space:pre-wrap}.plan-links{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:.82rem}@media(max-width:800px){.plan-steps{max-height:48dvh}.plan-step-heading{flex-wrap:wrap}}
+
+.plan-milestones { margin-block: 1rem; overflow-wrap: anywhere; }
+.plan-milestones h3 { font-size: .9rem; }
+.plan-milestones form { display: grid; gap: .65rem; margin-block: .8rem; }
+.plan-milestones label { display: grid; gap: .3rem; }
+.plan-milestones input, .plan-milestones textarea { width: 100%; min-width: 0; box-sizing: border-box; }

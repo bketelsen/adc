@@ -8,6 +8,7 @@ import (
 
 type Organization struct{ ID, Name, Description, Execution string }
 type Account struct {
+	BaseURL                          string
 	ID, User, Name, Provider, Secret string
 	Local                            bool
 	Limit                            int
@@ -31,6 +32,8 @@ type Assignment struct {
 	Revision                                                                int
 }
 type Run struct {
+	Preflight                                                                                                                         *PreflightSpec
+	Superseded                                                                                                                        bool
 	Execution                                                                                                                         string
 	Provider, Account                                                                                                                 string
 	RequiredTools                                                                                                                     []string
@@ -62,18 +65,18 @@ type Review struct{ ID, Org, Task, Run, Target, Revision, Model, Family, Verdict
 type Model struct{ ID, Name, Family string }
 
 func Family(model string) string {
-	switch {
-	case strings.HasPrefix(model, "gpt-"):
-		return "openai-gpt"
-	case strings.HasPrefix(model, "claude-"):
-		return "anthropic-claude"
-	case strings.HasPrefix(model, "grok-"):
-		return "xai-grok"
-	case strings.HasPrefix(model, "gemini-"):
-		return "google-gemini"
+	name := strings.ToLower(model)
+	if slash := strings.LastIndex(name, "/"); slash >= 0 {
+		name = name[slash+1:]
+	}
+	for prefix, family := range map[string]string{"gpt-": "openai-gpt", "claude-": "anthropic-claude", "grok-": "xai-grok", "gemini-": "google-gemini", "qwen": "alibaba-qwen", "deepseek": "deepseek", "llama": "meta-llama", "gemma": "google-gemma", "mistral": "mistral", "mixtral": "mistral"} {
+		if strings.HasPrefix(name, prefix) {
+			return family
+		}
 	}
 	return ""
 }
+
 func authorityRank(a string) int {
 	switch a {
 	case "observe":

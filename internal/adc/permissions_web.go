@@ -20,6 +20,9 @@ type PermissionEntryView struct {
 	Arguments   string
 }
 type PermissionRequestView struct {
+	MixedAllowed bool
+	Mixed        bool
+	Bound        bool
 	Request      AccessRequest
 	Entries      []PermissionEntryView
 	Runs         []Run
@@ -47,10 +50,19 @@ func (w *Web) permissionPage(org, connection string) PermissionPage {
 			p.Resolved++
 			continue
 		}
-		view := PermissionRequestView{Request: request, OneOperation: true}
+		view := PermissionRequestView{Request: request, OneOperation: true, MixedAllowed: true}
+		view.Mixed = mixedOperationBundle(request.Entries)
 		for _, entry := range request.Entries {
+			view.Bound = view.Bound || entry.Binding != nil
 			var tool GatewayTool
 			_ = w.Store.Get(entry.Tool, &tool)
+			if view.Mixed && entry.Binding == nil {
+				var policy ToolPolicy
+				if w.Store.Get("policy-"+tool.ID, &policy) != nil || policy.Human == "" || policy.Class != "read" || policy.Mode == "deny" || policy.Fingerprint != tool.Fingerprint {
+					view.MixedAllowed = false
+					view.OneOperation = false
+				}
+			}
 			b, _ := json.MarshalIndent(entry.Constraints, "", "  ")
 			args := string(entry.Arguments)
 			if args == "null" {

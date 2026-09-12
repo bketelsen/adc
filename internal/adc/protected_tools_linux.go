@@ -132,7 +132,7 @@ func (e *Engine) protectedTools(ctx context.Context, original Run) []copilot.Too
 			}
 			return s.CallGateway(ctx, original.ID, p.Tool, p.Operation, p.Arguments)
 		}),
-		copilot.DefineTool("adc_request_access", "Bundle missing capabilities for human review. Supply Purpose and Tools entries with Tool ID, optional exact Arguments and Operation, and optional finite Constraints using JSON Pointer and Allowed values. Supplied Arguments always add an exact whole-object restriction, including absent keys. Omit Arguments to propose a variable capability using Constraints. Approval can cover this operation, assignment, or explicit standing access. This yields the run; unaffected work continues. It does not grant access itself.", func(p struct {
+		copilot.DefineTool("adc_request_access", "Bundle missing capabilities for human review. Supply Purpose and Tools entries with Tool ID, optional exact Arguments and Operation, and optional finite Constraints using JSON Pointer and Allowed values. Supplied Arguments always add an exact whole-object restriction, including absent keys. Omit Arguments to propose a variable capability using Constraints. For a change/broad tool in an active execution plan, the current step worker must include Context with Action, Target, Environment, Effect, Validation and Rollback plus exact Arguments and Operation. ADC binds it to the current step/attempt and evidence; human approval covers only that exact operation and expires when artifacts or evidence change. Other capability approvals can cover an operation, assignment or standing access. This yields the run; unaffected work continues. It does not grant access itself.", func(p struct {
 			Purpose string
 			Tools   []AccessWant
 		}, _ copilot.ToolInvocation) (AccessRequest, error) {
@@ -158,7 +158,7 @@ func (e *Engine) protectedTools(ctx context.Context, original Run) []copilot.Too
 			tools[i].Parameters = map[string]any{"type": "object", "properties": map[string]any{"Tool": str, "Operation": str, "Arguments": object}, "required": []string{"Tool", "Operation", "Arguments"}, "additionalProperties": false}
 		}
 		if tools[i].Name == "adc_request_access" {
-			tools[i].Parameters = map[string]any{"type": "object", "properties": map[string]any{"Purpose": str, "Tools": map[string]any{"type": "array", "minItems": 1, "maxItems": 30, "items": map[string]any{"type": "object", "properties": map[string]any{"Tool": str, "Operation": str, "Arguments": object, "Constraints": map[string]any{"type": "array", "items": constraint}}, "required": []string{"Tool"}, "additionalProperties": false}}}, "required": []string{"Purpose", "Tools"}, "additionalProperties": false}
+			tools[i].Parameters = map[string]any{"type": "object", "properties": map[string]any{"Purpose": str, "Tools": map[string]any{"type": "array", "minItems": 1, "maxItems": 30, "items": map[string]any{"type": "object", "properties": map[string]any{"Tool": str, "Operation": str, "Arguments": object, "Context": map[string]any{"type": "object", "properties": map[string]any{"Action": str, "Target": str, "Environment": str, "Effect": str, "Validation": str, "Rollback": str}, "required": []string{"Action", "Target", "Environment", "Effect", "Validation", "Rollback"}, "additionalProperties": false}, "Constraints": map[string]any{"type": "array", "items": constraint}}, "required": []string{"Tool"}, "additionalProperties": false}}}, "required": []string{"Purpose", "Tools"}, "additionalProperties": false}
 		}
 	}
 	return tools

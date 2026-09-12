@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,9 +31,15 @@ type GatewayTool struct {
 }
 
 type gatewaySession struct {
-	Session  *mcp.ClientSession
+	Session  gatewayClient
 	Redactor Redactor
 	Revision string
+}
+
+type gatewayClient interface {
+	Tools(context.Context, *mcp.ListToolsParams) iter.Seq2[*mcp.Tool, error]
+	CallTool(context.Context, *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	Close() error
 }
 
 func connectionRevision(c Connection) string { b, _ := json.Marshal(c); return digest(string(b)) }
@@ -66,6 +73,8 @@ func (s *Store) openGateway(ctx context.Context, org, id string) (*gatewaySessio
 	}
 	var transport mcp.Transport
 	switch conn.Transport {
+	case "github":
+		return s.openGitHubGateway(conn)
 	case "stdio":
 		if !filepath.IsAbs(conn.Command) {
 			return nil, fmt.Errorf("gateway stdio commands must use an administrator-configured absolute path")

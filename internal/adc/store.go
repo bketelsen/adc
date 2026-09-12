@@ -19,10 +19,11 @@ import (
 )
 
 type Store struct {
-	db  *sql.DB
-	mu  sync.Mutex
-	key []byte
-	Dir string
+	githubFixture *githubFixtureConfig // Test-only transport endpoints; never persisted or model-configurable.
+	db            *sql.DB
+	mu            sync.Mutex
+	key           []byte
+	Dir           string
 }
 type Record struct {
 	ID, Kind, Org, Parent, State string
@@ -39,6 +40,18 @@ type Write struct {
 	Value                        any
 }
 
+func durableRecord(v any) any {
+	switch p := v.(type) {
+	case ExecutionPlan:
+		return durablePlan(p)
+	case *ExecutionPlan:
+		if p != nil {
+			return durablePlan(*p)
+		}
+	}
+	return v
+}
+
 func (s *Store) Batch(writes ...Write) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -46,7 +59,7 @@ func (s *Store) Batch(writes ...Write) error {
 	}
 	defer tx.Rollback()
 	for _, w := range writes {
-		b, err := json.Marshal(w.Value)
+		b, err := json.Marshal(durableRecord(w.Value))
 		if err != nil {
 			return err
 		}
@@ -116,7 +129,7 @@ func Open(dir string) (*Store, error) {
 }
 func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) Put(kind, org, parent, state, id string, v any) error {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(durableRecord(v))
 	if err != nil {
 		return err
 	}
@@ -137,7 +150,21 @@ func (s *Store) Get(id string, v any) error {
 	case *AccessRequest:
 		allowed = kind == "access-request" || kind == "access-request-history"
 	case *GatewayOperation:
-		allowed = kind == "gateway-operation"
+		allowed = kind == "gateway-operation" || kind == "gateway-operation-history"
+	case *ExecutionReadiness:
+		allowed = kind == "preflight"
+	case *RunResources:
+		allowed = kind == "run-resources" || kind == "run-resource-history"
+	case *GitHubDelivery:
+		allowed = kind == "github-delivery"
+	case *DurableWait:
+		allowed = kind == "durable-wait" || kind == "wait-history"
+	case *MilestoneEvidence:
+		allowed = kind == "milestone-evidence" || kind == "milestone-evidence-history"
+	case *IntegrationEvidence:
+		allowed = kind == "integration-evidence" || kind == "integration-evidence-history"
+	case *ExecutionPlan:
+		allowed = kind == "execution-plan" || kind == "execution-plan-history"
 	case *Organization:
 		allowed = kind == "organization"
 	case *Agent:

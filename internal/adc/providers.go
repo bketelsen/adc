@@ -9,8 +9,8 @@ func providerName(value string) string {
 	return value
 }
 func validateProvider(value string) error {
-	if p := providerName(value); p != "copilot" && p != "codex" && p != "claude" {
-		return fmt.Errorf("choose Copilot, Codex or Claude")
+	if p := providerName(value); p != "copilot" && p != "codex" && p != "claude" && p != "selfhosted" {
+		return fmt.Errorf("choose Copilot, Codex, Claude or Self-hosted")
 	}
 	return nil
 }
@@ -40,6 +40,9 @@ func (s *Store) runAccount(t Assignment, r Run) (Account, error) {
 	return a, nil
 }
 func (s *Store) bindRunAccount(t Assignment, r *Run) error {
+	if err := validateSelfhostedExecution(t, r.Provider); err != nil {
+		return err
+	}
 	a, err := s.fundingAccount(t, r.Provider)
 	if err == nil {
 		r.Account = a.ID

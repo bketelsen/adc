@@ -11,7 +11,7 @@ func excludedProviderTools() []string {
 }
 
 func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), contexts ...context.Context) []copilot.Tool {
-	tools := e.tools(r)
+	tools := e.tools(r, contexts...)
 	var task Assignment
 	_ = e.Store.Get(r.Task, &task)
 	if r.Execution == "protected" && task.Kind != "proposal" {

@@ -8,6 +8,7 @@ import (
 )
 
 type AccessWant struct {
+	Context         *OperationProposal
 	Tool, Operation string
 	Arguments       json.RawMessage
 	Constraints     []ArgumentConstraint
@@ -38,6 +39,11 @@ func (s *Store) RequestAccess(runID, purpose string, wants []AccessWant) (Access
 			return AccessRequest{}, fmt.Errorf("tool is explicitly denied; a human must change installation policy")
 		}
 		entry := AccessEntry{Tool: tool.ID, Fingerprint: tool.Fingerprint, Operation: want.Operation, Constraints: want.Constraints}
+		binding, err := s.bindOperation(run, want, policy)
+		if err != nil {
+			return AccessRequest{}, err
+		}
+		entry.Binding = binding
 		if len(want.Arguments) > 0 {
 			canonical, value, err := canonicalArguments(want.Arguments)
 			if err != nil {
@@ -65,15 +71,32 @@ func (s *Store) RequestAccess(runID, purpose string, wants []AccessWant) (Access
 		if pending.Task != run.Task || pending.State != "pending" {
 			continue
 		}
+		if operationBundleOwner(pending.Entries) != operationBundleOwner(entries) {
+			continue
+		}
 		if canonicalEntries(pending.Entries) == canonicalEntries(entries) && slices.Contains(pending.Runs, run.ID) {
 			run.State = "waiting"
 			return pending, s.Put("run", run.Org, run.Task, run.State, run.ID, run)
 		}
 		request = pending
+		request.Entries = append([]AccessEntry(nil), pending.Entries...)
 		history := pending
 		history.ID = ID()
 		writes = append(writes, Write{"access-request-history", run.Org, request.ID, pending.State, history.ID, history})
 		for _, entry := range entries {
+			replaced := false
+			if entry.Binding != nil {
+				for i, old := range request.Entries {
+					if old.Binding != nil && old.Binding.Run == entry.Binding.Run && old.Tool == entry.Tool && old.Operation == entry.Operation {
+						request.Entries[i] = entry
+						replaced = true
+						break
+					}
+				}
+			}
+			if replaced {
+				continue
+			}
 			if !slices.ContainsFunc(request.Entries, func(old AccessEntry) bool {
 				return canonicalEntries([]AccessEntry{old}) == canonicalEntries([]AccessEntry{entry})
 			}) {
@@ -118,8 +141,11 @@ func (s *Store) ResolveAccess(human, org, id string, revision int, scope, answer
 	if s.Get(id, &request) != nil || request.Org != org || request.State != "pending" || request.Revision != revision {
 		return fmt.Errorf("request changed or was already resolved; reload before deciding")
 	}
-	if scope != "decline" && scope != "operation" && scope != "assignment" && scope != "standing" {
+	if scope != "decline" && scope != "operation" && scope != "assignment" && scope != "standing" && scope != "mixed" {
 		return fmt.Errorf("choose operation, assignment, standing access or decline")
+	}
+	if scope == "mixed" && !mixedOperationBundle(request.Entries) {
+		return fmt.Errorf("mixed scope requires exact operations and explicitly listed assignment read access")
 	}
 	var task Assignment
 	if s.Get(request.Task, &task) != nil || task.Org != org || task.State == "cancelled" || task.State == "paused" {
@@ -130,6 +156,18 @@ func (s *Store) ResolveAccess(human, org, id string, revision int, scope, answer
 	seen := map[string]bool{}
 	if scope != "decline" {
 		for _, entry := range request.Entries {
+			if entry.Binding != nil {
+				if scope != "operation" && scope != "mixed" {
+					return fmt.Errorf("artifact-bound requests authorize only their exact operations")
+				}
+				var owner Run
+				if s.Get(entry.Binding.Run, &owner) != nil || owner.Org != org || owner.Task != task.ID {
+					return fmt.Errorf("operation owner unavailable")
+				}
+				if err := s.validateOperationBinding(owner, *entry.Binding); err != nil {
+					return err
+				}
+			}
 			var tool GatewayTool
 			if s.Get(entry.Tool, &tool) != nil || tool.Org != org || tool.Fingerprint != entry.Fingerprint {
 				return fmt.Errorf("requested tool changed; refresh the access proposal")
@@ -150,8 +188,12 @@ func (s *Store) ResolveAccess(human, org, id string, revision int, scope, answer
 				policy = ToolPolicy{ID: "policy-" + tool.ID, Org: org, Connection: tool.Connection, Tool: tool.ID, Fingerprint: tool.Fingerprint, Mode: "approval", Class: "broad", Revision: policy.Revision + 1, Human: human}
 				writes = append(writes, Write{"tool-policy", org, tool.Connection, policy.Mode, policy.ID, policy})
 			}
+			if scope == "mixed" && entry.Binding == nil && (policy.Class != "read" || policy.Human == "") {
+				return fmt.Errorf("mixed approval can grant reusable access only to human-classified read tools")
+			}
 			grant := CapabilityGrant{GrantEpoch: policy.GrantEpoch, StandingEpoch: policy.StandingEpoch, Class: policy.Class, Tool: tool.ID, Fingerprint: tool.Fingerprint, PolicyRevision: policy.Revision, Scope: "assignment", Constraints: append(append([]ArgumentConstraint{}, policy.Constraints...), entry.Constraints...), Approval: request.ID}
-			if scope == "operation" {
+			grant.Binding = entry.Binding
+			if scope == "operation" || (scope == "mixed" && entry.Binding != nil) {
 				if entry.Operation == "" || entry.ArgumentsHash == "" {
 					return fmt.Errorf("one-operation approval requires proposed arguments and an operation identifier for every entry")
 				}
@@ -289,6 +331,9 @@ func (s *Store) EditAccess(human, org, id string, revision int, constraints [][]
 		before, _ := json.Marshal(request.Entries[i].Constraints)
 		after, _ := json.Marshal(rules)
 		if string(before) != string(after) {
+			if request.Entries[i].Binding != nil {
+				return fmt.Errorf("an artifact-bound operation needs a fresh concrete proposal to change its arguments; discuss the change with its worker")
+			}
 			request.Entries[i].Operation = ""
 			request.Entries[i].ArgumentsHash = ""
 			request.Entries[i].Arguments = nil

@@ -41,6 +41,37 @@ func (w *Web) saveAccount(r *http.Request, user User) error {
 	if old.ID != "" && providerName(old.Provider) != a.Provider {
 		return errors.New("create a separate account when changing providers")
 	}
+	if a.Provider == "selfhosted" {
+		if a.Local {
+			return errors.New("self-hosted connections use an API base and optional API key, not a local CLI identity")
+		}
+		base := f("base_url")
+		if base == "" && old.ID != "" {
+			base = old.BaseURL
+		}
+		var err error
+		a.BaseURL, err = selfhostedBase(base)
+		if err != nil {
+			return err
+		}
+		changed := old.BaseURL != a.BaseURL || f("token") != "" || f("clear_token") == "on"
+		if old.ID != "" && changed && w.Engine.accountActive(a.ID) {
+			return errors.New("pause this account’s assignments and wait for active turns before replacing its endpoint or API key")
+		}
+		if f("clear_token") == "on" {
+			a.Secret = ""
+		} else if f("token") != "" {
+			a.Secret, err = s.Seal(f("token"))
+			if err != nil {
+				return err
+			}
+		}
+		if err := s.Put("account", "", a.User, "", a.ID, a); err != nil {
+			return err
+		}
+		r.Form.Set("return", "/selfhosted-account?org="+r.URL.Query().Get("org")+"&id="+a.ID)
+		return nil
+	}
 	if a.Provider == "codex" || a.Provider == "claude" {
 		if a.Local || f("token") != "" {
 			return errors.New("This provider uses its own sign-in; no token or local identity import")

@@ -1,0 +1,24 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE||'playwright');
+const path=require('node:path');
+(async()=>{const browser=await chromium.launch({headless:true});
+try{
+ const base=process.argv[2],context=await browser.newContext({viewport:{width:1440,height:1100}});
+ await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/permissions?org=org');
+ const request=page.locator('.permission-requests article');
+ await request.getByText('Publish one fixture canary',{exact:true}).waitFor();
+ if(await request.getByText('Edit the proposed restrictions',{exact:true}).count())throw Error('Bound operation allowed broad constraint edits');
+ const options=await request.locator('select[name="scope"] option').evaluateAll(es=>es.map(e=>e.value));
+ const expected=process.argv[3]==='exact-mixed'?['operation','mixed','decline']:[process.argv[3]||'operation','decline'];
+ if(JSON.stringify(options)!==JSON.stringify(expected))throw Error('Approval could widen scope '+options);
+ if(process.argv[3]==='exact-mixed' && await request.locator('select[name=scope]').inputValue()!=='operation')throw Error('Broader read access selected by default');
+ await page.screenshot({path:path.resolve(__dirname,'../../../../work/ui-operations-'+(process.argv[3]||'operation')+'-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone approval overflow');
+ await page.screenshot({path:path.resolve(__dirname,'../../../../work/ui-operations-'+(process.argv[3]||'operation')+'-mobile.png'),fullPage:true});
+ await request.getByRole('button',{name:'Record decision',exact:true}).click();
+ await page.getByText('No access requests are waiting for a decision.',{exact:true}).waitFor();
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('PASS: concrete context and revision pins, exact-operation-only approval, phone layout and no browser errors');
+}finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

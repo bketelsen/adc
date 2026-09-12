@@ -24,6 +24,7 @@ type ToolPolicy struct {
 	Constraints                                                []ArgumentConstraint
 }
 type CapabilityGrant struct {
+	Binding                                                      *OperationBinding
 	GrantEpoch, StandingEpoch                                    int
 	Class                                                        string
 	Tool, Fingerprint, Scope, Operation, ArgumentsHash, Approval string
@@ -31,6 +32,7 @@ type CapabilityGrant struct {
 	Constraints                                                  []ArgumentConstraint
 }
 type AccessEntry struct {
+	Binding                                     *OperationBinding
 	Arguments                                   json.RawMessage
 	Tool, Fingerprint, Operation, ArgumentsHash string
 	Constraints                                 []ArgumentConstraint
@@ -238,6 +240,9 @@ func (s *Store) authorizeGateway(runID string, tool GatewayTool, operation strin
 	if s.Get(runID, &run) != nil || run.State != "running" || run.Org != tool.Org || !Subset([]string{tool.Connection}, run.Tools) {
 		return Run{}, fmt.Errorf("this run does not hold this connection")
 	}
+	return s.authorizeGatewayRun(run, tool, operation, raw)
+}
+func (s *Store) authorizeGatewayRun(run Run, tool GatewayTool, operation string, raw json.RawMessage) (Run, error) {
 	var task Assignment
 	if s.Get(run.Task, &task) != nil || task.Org != run.Org || task.State == "paused" || task.State == "cancelled" {
 		return Run{}, fmt.Errorf("assignment is unavailable")
@@ -258,13 +263,16 @@ func (s *Store) authorizeGateway(runID string, tool GatewayTool, operation strin
 		return Run{}, fmt.Errorf("arguments exceed installation policy")
 	}
 	for _, g := range task.Capabilities {
+		if !s.operationGrantMatches(run, policy, g) {
+			continue
+		}
 		if strings.HasPrefix(g.Approval, "standing:") && (policy.Mode != "allow" || g.StandingEpoch != policy.StandingEpoch) {
 			continue
 		}
 		if g.GrantEpoch != policy.GrantEpoch || g.Tool != tool.ID || g.Fingerprint != tool.Fingerprint || g.Class != policy.Class || !constraintsMatch(value, g.Constraints) {
 			continue
 		}
-		if g.Scope == "operation" && (g.Operation != operation || g.ArgumentsHash != digest(string(canonical))) {
+		if g.Scope == "operation" && (operation == "" || g.Operation != operation || g.ArgumentsHash != digest(string(canonical))) {
 			continue
 		}
 		if g.Scope != "operation" && g.Scope != "assignment" {
@@ -296,19 +304,32 @@ func (s *Store) CallGateway(ctx context.Context, runID, toolID, operation string
 	}
 	id := "operation-" + digest(run.Task+":"+operation)
 	var prior GatewayOperation
+	reconcile := false
 	if s.Get(id, &prior) == nil {
-		s.mu.Unlock()
 		if prior.Org != run.Org || prior.Tool != tool.ID || prior.Fingerprint != tool.Fingerprint || prior.ArgumentsHash != digest(string(args)) {
+			s.mu.Unlock()
 			return "", fmt.Errorf("operation identifier is already bound to different arguments or tool")
 		}
 		if prior.State == "complete" {
+			var c Connection
+			if prior.Run != runID && tool.Name == "github_fetch" && s.Get(tool.Connection, &c) == nil && c.Transport == "github" {
+				s.mu.Unlock()
+				return "", fmt.Errorf("fetch belongs to another worker workspace; use this run's own fetch operation identifier")
+			}
+			s.mu.Unlock()
 			return prior.Result, nil
 		}
-		return "", fmt.Errorf("prior operation has an uncertain or in-flight outcome; reconcile before starting another mutation")
+		reconcile = s.retryableGitHubDelivery(tool, prior)
+		if !reconcile {
+			s.mu.Unlock()
+			return "", fmt.Errorf("prior operation has an uncertain or in-flight outcome; reconcile before starting another mutation")
+		}
 	}
 	s.mu.Unlock()
 	admitted := false
 	record := GatewayOperation{ID: id, Org: run.Org, Task: run.Task, Run: runID, Key: operation, Tool: tool.ID, Fingerprint: tool.Fingerprint, ArgumentsHash: digest(string(args)), State: "in-flight", Created: now()}
+	mutationAttempted := false
+	ctx = context.WithValue(ctx, githubActorKey{}, githubActor{Run: run.ID, Operation: operation, Arguments: args, MutationAttempted: &mutationAttempted})
 	result, err := s.invokeGateway(ctx, tool, args, func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -319,7 +340,7 @@ func (s *Store) CallGateway(ctx context.Context, runID, toolID, operation string
 		if s.Get(toolID, &current) != nil || current.Fingerprint != tool.Fingerprint {
 			return fmt.Errorf("tool changed during admission")
 		}
-		if s.Get(id, &prior) == nil {
+		if s.Get(id, &prior) == nil && (!reconcile || !s.retryableGitHubDelivery(tool, prior)) {
 			return fmt.Errorf("another call already claimed this operation")
 		}
 		var policy ToolPolicy
@@ -329,6 +350,9 @@ func (s *Store) CallGateway(ctx context.Context, runID, toolID, operation string
 		_, value, _ := canonicalArguments(args)
 		record.PolicyRevision = policy.Revision
 		for _, grant := range task.Capabilities {
+			if !s.operationGrantMatches(run, policy, grant) {
+				continue
+			}
 			if grant.GrantEpoch != policy.GrantEpoch || grant.Tool != tool.ID || grant.Fingerprint != tool.Fingerprint || grant.Class != policy.Class || !constraintsMatch(value, grant.Constraints) {
 				continue
 			}
@@ -347,16 +371,32 @@ func (s *Store) CallGateway(ctx context.Context, runID, toolID, operation string
 		if record.Grant.Approval == "" {
 			return fmt.Errorf("effective grant unavailable")
 		}
-		if err := s.Put("gateway-operation", run.Org, run.Task, record.State, id, record); err != nil {
+		writes := []Write{{"gateway-operation", run.Org, run.Task, record.State, id, record}}
+		if reconcile {
+			history := prior
+			history.ID = ID()
+			writes = append(writes, Write{"gateway-operation-history", run.Org, run.Task, history.State, history.ID, history})
+		}
+		if err := s.Batch(writes...); err != nil {
 			return err
 		}
 		admitted = true
 		return nil
 	})
 	if admitted {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		var current GatewayOperation
+		if s.Get(id, &current) != nil || current.Created != record.Created || current.State != "in-flight" {
+			return "", fmt.Errorf("operation was superseded during recovery; inspect its current outcome")
+		}
 		record.State, record.Result = "complete", result
 		if err != nil {
 			record.State, record.Result = "uncertain", err.Error()
+			var c Connection
+			if tool.Name == "github_draft_pr" && !mutationAttempted && s.Get(tool.Connection, &c) == nil && c.Transport == "github" {
+				record.State = "failed"
+			}
 		}
 		if saveErr := s.Put("gateway-operation", run.Org, run.Task, record.State, id, record); saveErr != nil {
 			return "", fmt.Errorf("external operation returned but recording failed; reconcile before retrying")
