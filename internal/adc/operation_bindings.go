@@ -119,6 +119,16 @@ func (s *Store) validateOperationBinding(run Run, b OperationBinding) error {
 func (s *Store) operationGrantMatches(run Run, policy ToolPolicy, grant CapabilityGrant) bool {
 	plan := s.taskPlan(run.Task)
 	if grant.Binding == nil {
+		// Built-in draft delivery already requires explicit task publication, exact
+		// reviewed source and current prerequisites at every remote mutation. An
+		// existing matching capability need not be approved again just for a plan.
+		var task Assignment
+		var tool GatewayTool
+		var connection Connection
+		if grant.Scope == "assignment" && s.Get(run.Task, &task) == nil && task.Publication && s.Get(policy.Tool, &tool) == nil && tool.Name == "github_draft_pr" && s.Get(tool.Connection, &connection) == nil && connection.Transport == "github" {
+			return true
+		}
+
 		// Neither a broader standing grant nor a child/root handoff can bypass
 		// artifact-bound approval for operations in a protected execution plan.
 		return plan.ID == "" || plan.State == "draft" || policy.Class == "read"

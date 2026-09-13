@@ -1,5 +1,63 @@
 # ADC priorities after the first real delivery
 
+## Active repair queue — 2026-09-13
+
+This is the current development priority order, ahead of the remaining feature roadmap below. Owner: Codex in the ADC development conversation. A diagnosis or a manual intervention is not an implemented fix. The delivery repair queue is implemented, qualified and deployed. The monitoring heartbeat remains read-only; development and deployment are owned by this conversation. Update this section when implementation starts, checks finish, or a change is deployed, rather than leaving commitments only in chat.
+
+The operating principle is a small team delegating real work: humans approve meaningful actions and resolve actual judgment calls; agents perform approved work, correct findings, and maintain the records. Human approval must not silently become a requirement for the human to run commands, push branches, or copy evidence into forms. Existing approval boundaries still apply; this is not blanket merge, release or infrastructure authorization.
+
+| Priority | Repair | Status | Completion condition |
+| --- | --- | --- | --- |
+| 1 | Advisory-worker workspace allocation and preflight recovery | Deployed; recovery verified | The queued wiki worker can obtain its requested build directory without changing execution mode or permissions, then start automatically after rollout. Invalid declarations must produce an actionable recovery path rather than endless retries. |
+| 2a | Consistent current authority | Deployed; recovery verified | Current structured approval and generated worker instructions agree. Explicit publication approval supersedes stale prohibitions for the approved action; delegation cannot broaden scope and unrelated restrictions remain intact. |
+| 2b | Review and delivery before external completion | Deployed; recovery verified | A candidate can receive independent review and reach a draft PR before the encompassing step's merge/release milestones are satisfied. Existing planned reviewers are used without circular waits or extra advisory-review workarounds. |
+| 2c | Approval dispatch and automatic outcome recording | Implemented: decision brief/buttons, linked acceptance, named action executor, durable approval and atomic observed outcomes; deployed; recovery verified | Approval resumes a capable agent to execute the specified action, inspect its actual outcome, record observable milestones, and continue. Ordinary CI corrections and handoffs do not require another human prompt. |
+| 2d | Repair active plans without discarding completed work | Deployed; recovery verified | Correct obsolete handoffs and accidental human-only execution requirements while preserving completed artifacts, valid reviews, unrelated work and the user's actual scope. Changes affecting real authority still require the applicable human decision. |
+| 3 | Waiting and supervisor recovery | Deployed; recovery verified | An intentionally blocked branch does not make adc_wait fail when independent work is pending. Waiting releases the model slot. Current run/review state takes precedence over stale Result text; completed reviews are not reset just to prod supervision. |
+| 4 | Tool availability matches run capabilities | Deployed; recovery verified | Advisory workers are directed to the validation tools they can actually use; advisory inspectors do not receive unusable formal-review completion instructions. Tool errors explain a recovery action without spawning reviews of failure reports. |
+| 5 | Complete the live plan view and rollout | Implemented: integrated graph, related work/decision links, connection editor and decision UI; deployed; recovery verified | The main graph shows relevant follow-up/correction/review runs and the current human decision, not just original worker/reviewer IDs. Deploy the graph, connection editor and decision UI through a controlled service restart that preserves active work. |
+
+### Evidence and scope of these commitments
+
+- **Priority 1:** Homelab task `2ddafb8e7f956cb259868e8d463dccd6`, worker `feb518ad5a13fa112028dd80d2d30672`, is queued on `isolated resource declarations currently require protected execution`. Its only requested resource is a `build` directory. Runtime and model checks pass; Brian has already supplied DNS and port confirmation. The worker has not started. Fix ADC's resource handling and verify queued recovery; do not invent another human prerequisite or silently claim protected isolation.
+- **Priority 2:** Repogen task `826fe6325266ae42b7e9e8c2b02ff39d` has Publication enabled while saved scope text prohibits PR publication. D5's formal review waits for worker completion, while completion requires merge and release. The mediated draft-PR path also requires a completed, reviewed source with all milestones satisfied. The generated plan converted human approval into named-human execution. These are distinct defects; a new button alone cannot fix the delivery lifecycle.
+- **Priority 2c implemented slice:** Short decision brief, collapsed detail, Approve/Reject/Refine with notes, explicit acceptance links, atomic decision/evidence recording, stale-revision rejection and worker wakeup are built locally. `make verify`, phone/browser qualification and independent Claude review passed. The new action flow also names the executor and optional external milestone, resumes that worker on approval, and records the observed result once through adc_action_result. Legacy prose-only requests do not acquire invented acceptance links or action approvals; resumed agents can replace them explicitly.
+- **Priority 3:** Repogen's deliberately blocked A0 repeatedly made adc_wait fail despite independent work in flight, leading to shell sleeps and occupied supervisor slots. Stale result text also contributed to unnecessary review resets. Treat these as scheduler/supervision defects, not reasons to ask Brian to keep saying “continue.”
+- **Priority 4:** Observed failures include adc_validate on advisory runs, adc_review on an advisory inspector, and preflight requests unsupported by the assigned execution mode. Preserve real capability boundaries while exposing usable paths.
+- **Priority 5:** The temporary read-only graph at port 8790 is useful but is not the integrated rollout. The local graph and connection-editor implementation was committed in `2e9a426`; the running service still predates it. Review-related follow-up runs can make its original-node projection misleading.
+
+### Delivery repair implementation
+
+- `adc_submit_review` submits a validated candidate to the existing designated cross-family reviewer before external milestones. Changes return the owner for correction; pass returns it to delivery. Candidate review never satisfies final step review, merge/release evidence, or downstream prerequisites. The same reviewer verifies final outcomes afterward.
+- Built-in draft PR delivery accepts the current reviewed candidate and prerequisites. Existing draft-publication approval and a matching tool capability do not require a second approval merely because an execution plan exists. Other protected mutations retain their operation approval rules.
+- `adc_decision action` freezes a concrete action, executor, target, validation, rollback and artifact. Approval atomically queues the executor. `adc_action_result` records observed completion and its optional linked milestone once; changed post-action evidence does not request retroactive reapproval. Observations remain agent-reported and independently reviewed. Advisory executors use their existing tools; an action decision does not add protected tool grants.
+- `adc_repair_step` corrects unfinished execution guidance and preflight declarations in place, preserving artifacts, reviews, dependencies, gates and permissions. It refuses an author with candidate review in progress. Completed current reviews cannot be reset as a supervision nudge.
+- Advisory preflight allocates per-run directories and coordinated port suggestions, with root-relative directory creation and no isolation claim. Invalid declarations return to supervision instead of retrying forever. Blocked siblings do not prevent waiting on progressing work.
+- Startup supplies updated lifecycle guidance once and wakes idle supervision without manufacturing authority, resetting completed work, or clearing deliberate blockers. The graph inspector includes related review/correction runs and decision links.
+
+Qualification includes candidate correction/review, a real local Git fixture and simulated GitHub API for draft delivery/lost-response reconciliation, human approval, executor-performed fixture merge, atomic outcome retry, final review and downstream dispatch. Browser checks cover the graph, decisions and connection editor. Production merge/release actions are not used as software tests. Independent Claude review found two issues (post-action stale-evidence rejection and repair during candidate review); both received fixes and regression tests before re-review. See deployment checkpoint below for live recovery evidence.
+
+### Deployment checkpoint — 2026-09-13 03:16 UTC
+
+The repair build was deployed with `make serve` after a graceful SIGTERM shutdown and a consistent local database backup. `make verify` passed (vet, race suite, build); graph, decision and connection-editor browser qualification passed on desktop/phone. Independent Claude review passed after corrections; its final preflight review also passed. A minor reviewer suggestion to prefer `adc_repair_step` over repeated reassignment for an invalid declaration was applied and the complete checks rerun.
+
+Observed on the actual restarted service:
+
+- The same wiki worker `feb518ad5a13fa112028dd80d2d30672` obtained its per-run `build` directory, passed every preflight check and began its **first activation** automatically. The impossible protected-mode blocker is gone; neither permissions nor execution mode changed.
+- Repogen retained its plan and run IDs. H0's output proceeded to the existing independent reviewer. The integrated graph displayed **21 / 33 complete** with H0 under review at this checkpoint.
+- Every pre-restart baseline record remained present; no previously completed run was reset. Existing deliberate blockers and human decisions were retained.
+- Supervisors successfully called `adc_wait` three times after rollout, releasing their slots while workers/reviewers progressed. One attempted handoff repair during active work was correctly refused; supervision then yielded rather than asking Brian to continue.
+
+The deployment is complete; the business assignments continue. This checkpoint does not claim the full migration or wiki deployment is finished. The synthetic end-to-end delivery qualification is not a new production merge/release authorization.
+
+### Manual recoveries — not product fixes
+
+Codex published the exact reviewed Repogen candidate as [PR #62](https://github.com/frostyard/repogen/pull/62), then squash-merged it on Brian's explicit “ok merge it” instruction. Merge `6780ff5e9b7e854b36416721587a423d060ee4f6` preserves reviewed tree `b9c4b5aff9f8c5f50807e9d957f74f71c29b1807`; GitHub checks passed. Codex supplied the result through ADC, and the D5 worker recorded `D5-merged-pr` revision 1. No release was published by that intervention. This unblocked the particular merge; it did not repair ADC's approval or delivery workflow.
+
+### Qualification for the delivery repair
+
+Prove one assignment through implementation, cross-family review/correction, draft PR, CI correction, human approval, agent-performed merge, automatic outcome recording and downstream resumption. Interrupt and resume partway through; do not duplicate publication or repeat an already-satisfied approval. Cover both approval-required actions and work already authorized. Run the applicable repository checks and independent review before rollout. Existing infrastructure/release authorizations are not expanded by this test or backlog.
+
 The Frostyard website assignment delivered two reviewed draft PRs, subsequently merged by Brian. The orchestration cleanup discovered during that run is deployed. The completion report retains the separate website dependency/security and visual-review follow-ups.
 
 The real read-only TrueNAS qualification is also complete: a GPT storage worker collected NAS observations and a Claude reviewer independently verified them through MCP. The resulting provisioning and blocked-outcome fixes are deployed. Infrastructure follow-ups in that report remain proposals requiring approval.

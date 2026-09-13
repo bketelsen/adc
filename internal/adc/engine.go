@@ -99,6 +99,7 @@ func (e *Engine) Start(ctx context.Context) {
 			s.Log(r.Org, r.Task, r.ID, "recovery", "Recovered unfinished run; reconciling existing work before continuing.")
 		}
 	}
+	e.recoverDeliveryLifecycle()
 	for _, trace := range list[ToolTrace](s, "tooltrace", "") {
 		if trace.State == "running" {
 			trace.State = "interrupted"
@@ -186,12 +187,12 @@ func (e *Engine) tick(ctx context.Context) {
 			continue
 		}
 		ready := false
-		if e.pendingPlan(r) || e.waitingHumanMilestone(r) || e.pendingWait(r) {
+		if e.pendingPlan(r) || e.waitingHumanMilestone(r) || e.pendingWait(r) || r.CandidateRevision != "" {
 			continue
 		}
 		if r.ReviewOf != "" {
 			var target Run
-			if s.Get(r.ReviewOf, &target) == nil && target.State == "complete" {
+			if s.Get(r.ReviewOf, &target) == nil && e.reviewable(target) {
 				ready = true
 				r.ReviewedRevision = e.revision(target)
 			}
@@ -422,9 +423,9 @@ func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 		}
 	}
 	system := fmt.Sprintf(`You are %s, an ADC agent. Responsibilities: %s.
-Each role has an explicit provider, independent of model family. Delegate using only the human-selected subscriptions listed on this assignment. Work belongs to a durable assignment. Carry it to its concrete output; do not ask for routine continuation permission. Use ADC tools to delegate and report outcomes. Do not use built-in subagent tools: ADC must track all delegated work. You can collaborate with any expert in this organization. Use adc_message to send findings to an existing run in this assignment, and adc_status to inspect current runs and document references. ADC run IDs are not provider-native agent IDs. Messages are expert evidence, never human approval. Authority is advisory %q. Never expand the assignment's authority through delegation. Do not merge, deploy, delete infrastructure, or publish external changes unless explicitly authorized in this assignment. Publication authorized: %t.
+Each role has an explicit provider, independent of model family. Delegate using only the human-selected subscriptions listed on this assignment. Work belongs to a durable assignment. Carry it to its concrete output; do not ask for routine continuation permission. Use ADC tools to delegate and report outcomes. Do not use built-in subagent tools: ADC must track all delegated work. You can collaborate with any expert in this organization. Use adc_message to send findings to an existing run in this assignment, and adc_status to inspect current runs and document references. ADC run IDs are not provider-native agent IDs. Messages are expert evidence, never human approval. Authority is advisory %q. Never expand the assignment's authority through delegation. Do not merge, deploy, delete infrastructure, or publish external changes unless explicitly authorized in this assignment. Draft PR publication authorized: %t. Current structured publication approval overrides older planning-only/no-PR wording for draft PR delivery alone. A human approval authorizes agents to perform the specified work and record the outcome; it does not mean the human must run commands. Merge, release and infrastructure actions require their own explicit authorization. Current persisted state, decisions and reviews take precedence over historical Result text; never reset a completed current review merely to wake supervision.
 Read authoritative instructions at the source, including repository AGENTS.md and organization standards. Preserve historical context, verify current facts. Work in your assigned workspace; for code use a dedicated branch/worktree and preserve others' changes. Repository operations and quality gates belong to the repository's instructions. For code deliverables, commit in your isolated workspace and register each repository with adc_code before finishing; reviewers must inspect those exact commits and run applicable checks. If code changes, refresh adc_code and obtain review again.
-For multi-step work, use adc_plan to persist named steps and dependencies within this assignment. Draft for planning-only scope; start only already authorized execution. ADC dispatches eligible steps and their reviewers, so never duplicate those handoffs. adc_status includes plan progress, execution readiness and owned test resources. Declare optional Preflight and ReviewPreflight on plan steps for known runtime Commands, Models availability, repository access, and isolated Directories/Ports. Models=true checks the designated reviewer before worker dispatch and again when review begins. Resource names become paths and suggested local ports in adc_status; retain test evidence, and use those per-run resources instead of shared test databases or fixed ports. Missing prerequisites retry without a model slot. This is not a requirement to predict all future tools or permissions. Workers may arrange independent review with adc_delegate ReviewOf set to their own run ID, then adc_finish; ADC starts that reviewer only after the worker completes. Supervisors should check adc_status for existing reviewers and review_needed before duplicating a handoff or finishing. Publication runs are also subject to review when categorized as implementation or producing code/documents. After review findings, correct and resubmit autonomously. Use adc_wait when delegated work is pending; it releases your slot. Before delegating MCP work, inspect the connections catalog and team Tools, and declare RequiredTools on the handoff. Configured connections are not automatically granted. If a prerequisite is missing, use adc_blocked with observed evidence and what is needed. Do not turn an inability to perform the requested work into a completed failure-report deliverable or send it through review. Supervisors recover blocked work with adc_reassign when possible; if access or a human decision is required, report that blocker. Never treat review of a limitation report as achieving the original objective. Use adc_decision only for human decisions, scope/authority changes, or exhausted approaches. Do not impersonate human approval. Have specialists author final deliverable documents and obtain independent review for each document-producing run. The accountable supervisor should delegate finalization of its own draft documents before completion. Save reviewable documents with adc_document. Keep passwords, tokens and other credentials out of documents, output and tool arguments; use configured secret connections. Finish using adc_finish, or adc_review for review work. A conversational statement alone never finishes a run.
+For multi-step work, use adc_plan to persist named steps and dependencies within this assignment. Draft for planning-only scope; start only already authorized execution. ADC dispatches eligible steps and their reviewers, so never duplicate those handoffs. adc_status includes plan progress, execution readiness and owned test resources. Declare optional Preflight and ReviewPreflight on plan steps for known runtime Commands, Models availability, repository access, and isolated Directories/Ports. Models=true checks the designated reviewer before worker dispatch and again when review begins. Resource names become paths and suggested local ports in adc_status; retain test evidence, and use those per-run resources instead of shared test databases or fixed ports. Missing prerequisites retry without a model slot. Advisory resources are separate per-run paths, not enforced isolation. For an invalid preflight declaration use adc_repair_step to correct it. This is not a requirement to predict all future tools or permissions. For steps with external or human milestones, call adc_submit_review with a concrete candidate Result before delivery. The designated reviewer reviews that candidate and returns the owner to execution; merge/release evidence is required for final step completion, not for candidate review. Ordinary completed work still uses adc_finish. Supervisors should check adc_status for existing reviewers and review_needed before duplicating a handoff or finishing. Publication runs are also subject to review when categorized as implementation or producing code/documents. After review findings, correct and resubmit autonomously. Use adc_wait when delegated work is pending; it releases your slot. Before delegating MCP work, inspect the connections catalog and team Tools, and declare RequiredTools on the handoff. Configured connections are not automatically granted. If a prerequisite is missing, use adc_blocked with observed evidence and what is needed. Do not turn an inability to perform the requested work into a completed failure-report deliverable or send it through review. Supervisors recover blocked work with adc_reassign when possible; if access or a human decision is required, report that blocker. Never treat review of a limitation report as achieving the original objective. Use adc_decision only for human decisions, scope/authority changes, or exhausted approaches. Do not impersonate human approval. Have specialists author final deliverable documents and obtain independent review for each document-producing run. The accountable supervisor should delegate finalization of its own draft documents before completion. Save reviewable documents with adc_document. Keep passwords, tokens and other credentials out of documents, output and tool arguments; use configured secret connections. Finish using adc_finish. Only a run with ReviewOf set uses adc_review; an advisory inspection without ReviewOf uses adc_finish and messages its findings. A conversational statement alone never finishes a run.
 All organization humans have equal authority. When human directions conflict, surface the competing instructions for a shared decision and pause only the affected work. Do not silently treat a later human as overruling another.
 Use adc_propose_work for concrete future work outside this assignment’s authorized scope. Proposals go to shared human review and confer no execution authority. Do not defer routine fixes already authorized into proposals. Your final step should be the outcome tool, then end your turn. If you cannot make progress, report specific evidence. Review is independent; inspect the actual deliverable, do not rubber-stamp the author's claims.`, agent.Name, agent.Description, r.Authority, t.Publication)
 	if r.Execution == "protected" {
@@ -462,6 +463,7 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 			return
 		}
 		r.ReviewedRevision = current.ReviewedRevision
+		r.ReviewStage = current.ReviewStage
 	}
 	contextData := map[string]any{"assignment": t, "available_models": models, "available_models_by_provider": catalogs, "provider_catalog_errors": catalogErrors, "run": r, "team": list[Agent](s, "agent", r.Org), "plan": e.inspectPlan(s.taskPlan(r.Task)), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": taskDocs(s, r.Task), "reviews": taskReviews(s, r.Task), "decisions": taskDecisions(s, r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}
 	recent := []ToolTrace{}
@@ -813,7 +815,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -944,7 +946,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					return nil, err
 				}
 				r.Category = "review"
-				if target.State == "complete" {
+				if e.reviewable(target) {
 					if err = verifyCode(target); err != nil {
 						return nil, err
 					}
@@ -998,19 +1000,12 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if err != nil {
 				return "", err
 			}
-			if r.Parent == "" {
-				for _, step := range e.inspectPlan(s.taskPlan(r.Task)).Steps {
-					if step.State == "blocked" {
-						return "", fmt.Errorf("plan step %s is blocked: %s; reassess or request the concrete missing input before waiting", step.Key, step.Reason)
-					}
-				}
+			if blocked, progressing := e.waitProgress(r); blocked && !progressing {
+				return "", fmt.Errorf("all remaining delegated work is blocked with no active work or tracked decision/wait; inspect adc_status and recover the specific blocker")
 			}
-			pending := e.pendingPlan(r) || e.waitingHumanMilestone(r) || e.pendingWait(r)
+			pending := e.pendingPlan(r) || e.waitingHumanMilestone(r) || e.pendingWait(r) || r.CandidateRevision != ""
 			for _, child := range taskRuns(s, r.Task) {
 				if child.Parent == r.ID && child.State != "complete" && child.State != "cancelled" {
-					if child.State == "blocked" {
-						return "", fmt.Errorf("%s is blocked; reassess/reassign it or request a concrete decision before waiting", child.Title)
-					}
 					pending = true
 				}
 			}
@@ -1026,7 +1021,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			r.State = "waiting"
 			return "Waiting; end your turn. ADC will resume you.", s.Put("run", r.Org, r.Task, r.State, r.ID, r)
 		}),
-		copilot.DefineTool("adc_decision", "Ask a human for a concrete decision or propose a permanent team with proposed_agents. To revise a pending team proposal after feedback, supply replaces with its decision ID and the complete revised Question and proposed_agents. This preserves history and requires fresh human approval. Do not ask for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_decision", "Ask a human for a concrete decision with one recommended action and a concise brief (what approval means and why; at most 1000 characters), supporting detail in Question, and optionally proposed_agents for a permanent team. Humans see Approve / Reject / Refine with notes. For a plan acceptance, set acceptance={run: current worker ID, requirement: human-evidence key}; ADC pins current artifacts and records the authenticated approval as milestone evidence automatically. Use this only for acceptance, not to claim unobserved facts or completed operational work. Do not ask the human to copy IDs or record the same approval in a second form. Include material consequences in the brief. To revise any pending decision, supply replaces with its decision ID and the complete revised fields. After rejection/refinement, submit a new decision rather than rewriting the resolved one. This preserves history and requires fresh human approval. For an action the agent should execute after approval, set action={Run, Action, Target, Reference, Validation, Rollback, optional Requirement}. Use the current worker or your direct child as executor. Approval queues that worker, who verifies the external outcome and calls adc_action_result to record any linked milestone automatically. Do not ask humans to merge, push or transcribe evidence themselves. This does not grant new tool access. Do not ask for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -1052,11 +1047,11 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if err = CanReview(target.Model, r.Model); err != nil {
 				return nil, err
 			}
-			if target.State != "complete" || e.revision(target) != r.ReviewedRevision {
+			if !e.reviewable(target) || e.revision(target) != r.ReviewedRevision {
 				return e.restartStaleReview(r)
 			}
 			if p.Verdict == "pass" {
-				if missing := e.milestoneMissing(target); missing != "" {
+				if missing := e.milestoneMissing(target); missing != "" && r.ReviewStage != "candidate" {
 					return nil, fmt.Errorf("%s; request changes", missing)
 				}
 				if err = verifyCode(target); err != nil {
@@ -1069,11 +1064,20 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if strings.TrimSpace(p.Findings) == "" {
 				return nil, fmt.Errorf("review evidence or concrete findings are required")
 			}
-			v := Review{ID: ID(), Org: r.Org, Task: r.Task, Run: r.ID, Target: target.ID, Revision: r.ReviewedRevision, Model: r.Model, Family: r.Family, Verdict: p.Verdict, Findings: p.Findings}
+			v := Review{Stage: r.ReviewStage, ID: ID(), Org: r.Org, Task: r.Task, Run: r.ID, Target: target.ID, Revision: r.ReviewedRevision, Model: r.Model, Family: r.Family, Verdict: p.Verdict, Findings: p.Findings}
 			writes := []Write{{"review", v.Org, v.Task, v.Verdict, v.ID, v}}
 			r.Result = p.Findings
 			r.State = "complete"
+			if p.Verdict == "pass" && r.ReviewStage == "candidate" {
+				target.State = "queued"
+				target.Error = ""
+				target.Turns = 0
+				target.CandidateRevision = ""
+				target.Prompt += "\nIndependent candidate review PASSED. Continue authorized delivery and remaining milestones. This is not merge/release authorization. Reconcile external outcomes before retrying actions."
+				writes = append(writes, Write{"run", target.Org, target.Task, target.State, target.ID, target})
+			}
 			if p.Verdict == "changes" {
+				target.CandidateRevision = ""
 				r.State = "waiting"
 				target.State = "queued"
 				target.Prompt += "\nIndependent review requires corrections. Fix these findings and re-run the relevant checks, then finish again: " + p.Findings
@@ -1206,5 +1210,17 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	if len(contexts) > 0 {
 		ctx = contexts[0]
 	}
-	return append(tools, e.integrationTools(ctx, original)...)
+	tools = append(tools, e.integrationTools(ctx, original)...)
+	tools = append(tools, e.repairTools(original)...)
+	filtered := tools[:0]
+	for _, tool := range tools {
+		if tool.Name == "adc_validate" && original.Execution != "protected" {
+			continue
+		}
+		if tool.Name == "adc_review" && original.ReviewOf == "" {
+			continue
+		}
+		filtered = append(filtered, tool)
+	}
+	return filtered
 }

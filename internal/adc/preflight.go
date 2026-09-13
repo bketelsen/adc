@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -213,7 +215,14 @@ func (e *Engine) ensurePreflight(ctx context.Context, r Run) bool {
 			}
 		}
 		claim.NextAt = time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)
-		if err := s.Batch(Write{"preflight", r.Org, r.Task, claim.State, claim.ID, claim}, Write{"run", run.Org, run.Task, run.State, run.ID, run}); err == nil {
+		writes := []Write{}
+		for _, check := range checks {
+			if check.Name == "Definition" && check.State != "pass" {
+				writes = append(writes, e.escalationWrites(&run, "Invalid preflight declaration: "+check.Detail+". Correct it using adc_repair_step; retries cannot change the declaration.")...)
+			}
+		}
+		writes = append(writes, Write{"preflight", r.Org, r.Task, claim.State, claim.ID, claim}, Write{"run", run.Org, run.Task, run.State, run.ID, run})
+		if err := s.Batch(writes...); err == nil {
 			s.Log(r.Org, r.Task, r.ID, "preflight", "Execution prerequisites: "+claim.State)
 		}
 	}()
@@ -294,7 +303,7 @@ func (e *Engine) probeReadiness(ctx context.Context, r Run, models []Run) []Pref
 	}
 	if len(r.Preflight.Directories) > 0 || len(r.Preflight.Ports) > 0 {
 		err := e.prepareRunResources(ctx, r)
-		add("Isolated test resources", "Owned directories and port suggestions recorded in adc_status. Ports are coordinated within ADC, not exclusively reserved against other host processes. Test data is retained with the workspace.", err)
+		add("Owned test resources", "Per-run directories (advisory mode is not a security boundary) and port suggestions recorded in adc_status. Ports are coordinated within ADC, not exclusively reserved against other host processes. Test data is retained with the workspace.", err)
 	}
 	return checks
 }
@@ -353,8 +362,8 @@ func (e *Engine) probeRepository(ctx context.Context, r Run, repo RepositoryPref
 }
 
 func (e *Engine) prepareRunResources(ctx context.Context, r Run) error {
-	if r.Execution != "protected" {
-		return fmt.Errorf("isolated resource declarations currently require protected execution")
+	if err := validatePreflight(r.Preflight); err != nil {
+		return err
 	}
 	s := e.Store
 	s.mu.Lock()
@@ -408,6 +417,9 @@ func (e *Engine) prepareRunResources(ctx context.Context, r Run) error {
 	}
 	for _, name := range r.Preflight.Directories {
 		resources.Directories[name] = "/workspace/.adc-test/" + name
+		if r.Execution != "protected" {
+			resources.Directories[name] = filepath.Join(r.Workspace, ".adc-test", name)
+		}
 	}
 	if allocationErr == nil {
 		writes := []Write{{"run-resources", r.Org, r.Task, resources.State, resources.ID, resources}}
@@ -420,6 +432,43 @@ func (e *Engine) prepareRunResources(ctx context.Context, r Run) error {
 	s.mu.Unlock()
 	if allocationErr != nil {
 		return allocationErr
+	}
+	if r.Execution != "protected" {
+		// Root-relative operations cannot follow a worker symlink outside ADC data.
+		root, err := os.OpenRoot(s.Dir)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		rel, err := filepath.Rel(s.Dir, r.Workspace)
+		if err != nil || !filepath.IsLocal(rel) {
+			return fmt.Errorf("workspace must be inside ADC data")
+		}
+		if err := root.MkdirAll(rel, 0700); err != nil {
+			return err
+		}
+		path := ""
+		for _, part := range strings.Split(rel, string(filepath.Separator)) {
+			path = filepath.Join(path, part)
+			info, err := root.Lstat(path)
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("workspace must not traverse a symlink")
+			}
+		}
+		workspace, err := root.OpenRoot(rel)
+		if err != nil {
+			return err
+		}
+		defer workspace.Close()
+		for _, name := range r.Preflight.Directories {
+			if err := workspace.MkdirAll(filepath.Join(".adc-test", name), 0700); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	x, err := runExecutor(r)
 	if err != nil {

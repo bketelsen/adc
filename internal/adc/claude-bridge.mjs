@@ -62,7 +62,7 @@ async function consume(s) {
       if (m.type === 'system' && m.subtype === 'init' && !sameModel(m.model, s.model)) throw new Error('Claude returned a different model; no substitution permitted');
       if (m.type === 'assistant') {
         const model = m.message.model;
-        if (model && !sameModel(model, s.model)) throw new Error('Claude changed the execution model; no substitution permitted');
+        if (model && !sameModel(model, s.model)) throw new Error(`Claude changed the execution model from ${s.model} to ${model}; no substitution permitted`);
         const u = m.message.usage;
         if (u && m.message.id && model) {
           s.messages.set(m.message.id, {model, inputTokens: u.input_tokens, outputTokens: u.output_tokens, cacheReadInputTokens: u.cache_read_input_tokens, cacheCreationInputTokens: u.cache_creation_input_tokens});

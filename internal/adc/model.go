@@ -32,6 +32,7 @@ type Assignment struct {
 	Revision                                                                int
 }
 type Run struct {
+	CandidateRevision, ReviewStage                                                                                                    string
 	Preflight                                                                                                                         *PreflightSpec
 	Superseded                                                                                                                        bool
 	Execution                                                                                                                         string
@@ -57,11 +58,17 @@ type Connection struct {
 	Headers                                map[string]string
 }
 type Decision struct {
+	Action                                            *DecisionAction `json:",omitempty"`
+	Brief, Outcome, ResolvedBy, ResolvedAt            string
+	Acceptance                                        *DecisionAcceptance `json:",omitempty"`
 	Document, Replaces                                string
 	ID, Org, Task, Run, Question, Answer, State, Kind string
 	Proposal                                          []Agent
 }
-type Review struct{ ID, Org, Task, Run, Target, Revision, Model, Family, Verdict, Findings string }
+type Review struct {
+	Stage                                                                  string
+	ID, Org, Task, Run, Target, Revision, Model, Family, Verdict, Findings string
+}
 type Model struct{ ID, Name, Family string }
 
 func Family(model string) string {

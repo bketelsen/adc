@@ -699,23 +699,63 @@ func (w *Web) action(r *http.Request, p Page) error {
 		}
 		var run Run
 		writes := []Write{}
+		decisionLog := ""
+		commitResponse := func(writes []Write) error {
+			if err := s.Batch(writes...); err != nil {
+				return err
+			}
+			if decisionLog != "" {
+				s.Log(t.Org, t.ID, run.ID, "human", decisionLog)
+			}
+			return nil
+		}
 		if r.URL.Path == "/decision" {
 			var d Decision
-			if s.Get(f("decision"), &d) != nil || d.Task != t.ID || d.State != "pending" {
+			if s.Get(f("decision"), &d) != nil || d.Task != t.ID || d.Org != t.Org || d.State != "pending" {
 				return errors.New("Decision already resolved or unavailable")
 			}
 			if d.Kind == "permission" {
 				return errors.New("resolve this access bundle on the Permissions page")
 			}
-			if s.Get(d.Run, &run) != nil {
+			if s.Get(d.Run, &run) != nil || run.Task != t.ID || run.Org != t.Org || run.Superseded || run.State == "cancelled" {
 				return errors.New("Run unavailable")
 			}
-			if f("answer") == "" {
-				return errors.New("Enter your decision")
+			d.Outcome = f("outcome")
+			d.Answer = strings.TrimSpace(f("answer"))
+			if d.Outcome != "" {
+				var err error
+				d.Answer, err = decisionAnswer(d, d.Outcome, f("answer"))
+				if err != nil {
+					return err
+				}
+			} else if d.Answer == "" || d.Acceptance != nil {
+				return errors.New("Choose Approve, Reject, or Refine with notes")
 			}
-			d.State = "answered"
-			d.Answer = f("answer")
-			if f("approve_team") == "on" {
+			d.State, d.ResolvedBy, d.ResolvedAt = "answered", p.User.ID, now()
+			if d.Outcome == "approve" {
+				linked, err := w.Engine.decisionAcceptanceWrites(d, run, p.User.ID)
+				if err == nil {
+					var actionWrites []Write
+					actionWrites, err = w.Engine.approveDecisionAction(&d, run)
+					linked = append(linked, actionWrites...)
+				}
+				if err != nil {
+					return err
+				}
+				writes = append(writes, linked...)
+				// Preserve lifecycle updates prepared for the requester/task in the
+				// shared transaction, before adding the human response below.
+				for _, write := range linked {
+					if value, ok := write.Value.(Run); ok && value.ID == run.ID {
+						run = value
+					}
+					if value, ok := write.Value.(Assignment); ok && value.ID == t.ID {
+						t = value
+					}
+				}
+			}
+			approveTeam := len(d.Proposal) > 0 && (d.Outcome == "approve" || (d.Outcome == "" && f("approve_team") == "on"))
+			if approveTeam {
 				agents, err := PrepareTeam(s, t.Org, d.Proposal)
 				if err != nil {
 					return fmt.Errorf("Team proposal needs correction: %w", err)
@@ -739,23 +779,28 @@ func (w *Web) action(r *http.Request, p Page) error {
 					t.State = "ready"
 					t.Output = run.Result
 					writes = append(writes, Write{"run", run.Org, run.Task, run.State, run.ID, run}, Write{"assignment", t.Org, "", t.State, t.ID, t})
-					s.Log(t.Org, t.ID, run.ID, "human", p.User.Name+" approved the proposed permanent team.")
-					return s.Batch(writes...)
+					decisionLog = p.User.Name + " approved the proposed permanent team."
+					return commitResponse(writes)
 				}
 			}
 			writes = append(writes, Write{"decision", d.Org, d.Task, d.State, d.ID, d})
 			run.Reassignments = 0
 			for _, child := range taskRuns(s, t.ID) {
+				for _, write := range writes {
+					if value, ok := write.Value.(Run); ok && value.ID == child.ID {
+						child = value
+					}
+				}
 				if child.Parent == run.ID && child.State == "blocked" {
 					child.Reassignments = 0
 					writes = append(writes, Write{"run", child.Org, child.Task, child.State, child.ID, child})
 				}
 			}
 			run.Prompt += "\nHUMAN DECISION from " + p.User.Name + ": " + d.Answer
-			if f("publish") == "on" {
+			if f("publish") == "on" && (d.Outcome == "approve" || d.Outcome == "") {
 				t.Publication = true
 			}
-			s.Log(t.Org, t.ID, run.ID, "human", p.User.Name+": "+d.Answer)
+			decisionLog = p.User.Name + ": " + d.Answer
 		} else {
 			if f("message") == "" {
 				return errors.New("Enter a message")
@@ -802,7 +847,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		}
 		if run.State == "running" {
 			run.Steering = true
-			return s.Batch(append(writes, Write{"assignment", t.Org, "", t.State, t.ID, t}, Write{"run", run.Org, run.Task, run.State, run.ID, run})...)
+			return commitResponse(append(writes, Write{"assignment", t.Org, "", t.State, t.ID, t}, Write{"run", run.Org, run.Task, run.State, run.ID, run}))
 		}
 		run.State = "queued"
 		run.Turns = 0
@@ -810,7 +855,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if t.State != "paused" && t.State != "cancelled" {
 			t.State = "queued"
 		}
-		return s.Batch(append(writes, Write{"assignment", t.Org, "", t.State, t.ID, t}, Write{"run", run.Org, run.Task, run.State, run.ID, run})...)
+		return commitResponse(append(writes, Write{"assignment", t.Org, "", t.State, t.ID, t}, Write{"run", run.Org, run.Task, run.State, run.ID, run}))
 	default:
 		return errors.New("Unknown action")
 	}

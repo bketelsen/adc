@@ -1,0 +1,40 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE || 'playwright');
+const path=require('node:path'),fs=require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const base=process.argv[2],context=await browser.newContext({viewport:{width:1280,height:960}});
+  await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(base+'/task?org=org&id=task');
+  const card=page.locator('#decisionlist > article').first();
+  await card.getByRole('button',{name:'Approve',exact:true}).waitFor();
+  if(await card.locator('.decision-rationale').getAttribute('open')!==null)throw Error('Evidence starts expanded');
+  const dir=path.resolve(__dirname,'../../../../work');fs.mkdirSync(dir,{recursive:true});
+  await page.screenshot({path:path.join(dir,'ui-decision-brief-desktop.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone overflow');
+  await page.screenshot({path:path.join(dir,'ui-decision-brief-mobile.png'),fullPage:true});
+  if(!await card.evaluate(el=>{const pane=document.getElementById('decisionlist').getBoundingClientRect();return [...el.querySelectorAll('button[name=outcome]')].every(button=>{const box=button.getBoundingClientRect();return box.top>=pane.top&&box.bottom<=pane.bottom;})}))throw Error('Decision pane clips action buttons');
+  await card.locator('.decision-notes > summary').click();
+  await card.locator('textarea').fill('Ben is the backup operator.');
+  await card.locator('.decision-rationale > summary').click();
+  const id=await card.getAttribute('id');
+  await page.request.get(base+'/fixture-update');
+  await page.locator('#decision-fixture-other-decision').waitFor();
+  const original=page.locator('#'+id);
+  if(await original.locator('textarea').inputValue()!=='Ben is the backup operator.')throw Error('Live update erased notes');
+  if(await original.locator('.decision-rationale').getAttribute('open')===null)throw Error('Live update collapsed evidence');
+  await original.getByRole('button',{name:'Approve',exact:true}).click();
+  await page.waitForURL(/#decisionlist$/);
+  if(await page.locator('#'+id).count())throw Error('Resolved decision still pending');
+  const refine=page.locator('#decision-fixture-other-decision');
+  await refine.getByRole('button',{name:'Refine with notes',exact:true}).click();
+  if(!await refine.locator('textarea').evaluate(el=>!el.validity.valid))throw Error('Refine accepted empty notes');
+  await refine.locator('textarea').fill('Propose a shorter support period.');
+  await refine.getByRole('button',{name:'Refine with notes',exact:true}).click();
+  await page.waitForFunction(()=>!document.getElementById('decision-fixture-other-decision'));
+  if(errors.length)throw Error(errors.join('\n'));
+  console.log('PASS: brief, collapsed evidence, phone layout, live notes/disclosure preservation, one-click acceptance, and refinement notes');
+ } finally {await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

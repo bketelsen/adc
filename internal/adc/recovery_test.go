@@ -171,7 +171,14 @@ func TestPendingDecisionCannotBeBypassedByAnotherCompletion(t *testing.T) {
 		t.Fatal("worker completed past an unresolved conflict")
 	}
 	_, err := call(t, e, child, "adc_decision", map[string]any{"Question": "May I ignore the first instruction?"})
-	must(t, err)
+	if err == nil || !strings.Contains(err.Error(), "replaces=conflict") {
+		t.Fatal("a changed question must explicitly replace the pending request", err)
+	}
+	var stored Decision
+	must(t, s.Get(decision.ID, &stored))
+	if stored.State != "pending" || stored.Question != decision.Question {
+		t.Fatal("retry silently changed the unresolved conflict")
+	}
 	if len(taskDecisions(s, root.Task)) != 1 {
 		t.Fatal("same run created a competing approval request")
 	}

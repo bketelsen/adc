@@ -99,3 +99,21 @@ document.addEventListener('click', async event => {
  new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
  schedule();
 })();
+
+// Notes are optional for a decision, required when requesting a revision.
+// Server validation remains authoritative, including clients without JavaScript.
+document.addEventListener('submit', event => {
+ const form=event.target;
+ if(!form.matches('[data-decision-form]'))return;
+ const notes=form.elements.answer;
+ if(event.submitter?.value==='refine'&&!notes.value.trim()) {
+  event.preventDefault();form.querySelector('.decision-notes').open=true;notes.setCustomValidity('Describe what you would like changed.');notes.reportValidity();notes.focus();
+ }
+});
+document.addEventListener('input', event=>{
+ if(event.target.matches('[data-decision-form] textarea'))event.target.setCustomValidity('');
+});
+document.addEventListener('click', event=>{
+ const button=event.target.closest('[data-decision-form] button[name="outcome"]');
+ if(button)button.form.elements.answer.setCustomValidity('');
+});

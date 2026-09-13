@@ -23,7 +23,7 @@ func (e *Engine) reviewNeeds(task string) []map[string]string {
 
 func (e *Engine) hasCurrentReview(r Run, reviews []Review) bool {
 	for _, review := range reviews {
-		if review.Target == r.ID && review.Revision == e.revision(r) && CanReview(r.Model, review.Model) == nil {
+		if review.Stage != "candidate" && review.Target == r.ID && review.Revision == e.revision(r) && CanReview(r.Model, review.Model) == nil {
 			return review.Verdict == "pass"
 		}
 	}

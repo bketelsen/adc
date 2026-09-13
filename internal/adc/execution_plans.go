@@ -20,7 +20,10 @@ type PlanAttempt struct {
 	Run, Review, Reason, Created string
 	Inputs                       map[string]string
 }
+type PlanRelatedRun struct{ ID, Org, Agent, Title, State string }
 type PlanStep struct {
+	Related                    []PlanRelatedRun
+	Decisions                  []Decision
 	Readiness, ReviewReadiness ExecutionReadiness
 	Resources                  RunResources
 	Integration                IntegrationEvidence
@@ -52,6 +55,8 @@ func durablePlan(p ExecutionPlan) ExecutionPlan {
 	p.Steps = append([]PlanStep(nil), p.Steps...)
 	for i := range p.Steps {
 		step := &p.Steps[i]
+		step.Related = nil
+		step.Decisions = nil
 		step.Readiness = ExecutionReadiness{}
 		step.ReviewReadiness = ExecutionReadiness{}
 		step.Resources = RunResources{}
@@ -248,7 +253,7 @@ func (e *Engine) planRun(task Assignment, root Run, step PlanStep, a Agent, revi
 	}
 	if len(step.Requirements) > 0 {
 		requirements, _ := json.Marshal(step.Requirements)
-		r.Prompt += "\nRequired milestones: " + string(requirements) + "\nRequirements with Wait are recorded only by ADC: start them with adc_await then release your slot using adc_wait. Inspect current observations with adc_status; never submit a manual packet for an automatic requirement. A generic success or code-review pass does not satisfy an external milestone. For each non-code requirement, the owner records exact Kind and Target with adc_milestone, including concrete observations, source Reference and RFC3339 ObservedAt. Only humans can supply human-evidence via the plan UI; use adc_wait while it is missing. Reviewed-code requires adc_code. Reviewers independently inspect the typed evidence and criteria, including target/artifact identity, and return changes if it only proves a weaker milestone. Evidence records are observations, never authority to merge, release or operate infrastructure."
+		r.Prompt += "\nRequired milestones: " + string(requirements) + "\nRequirements with Wait are recorded only by ADC: start them with adc_await then release your slot using adc_wait. Inspect current observations with adc_status; never submit a manual packet for an automatic requirement. A generic success or code-review pass does not satisfy an external milestone. For each non-code requirement, the owner records exact Kind and Target with adc_milestone, including concrete observations, source Reference and RFC3339 ObservedAt. For a human acceptance, request adc_decision with acceptance linked to this requirement so approval records it automatically. Only genuinely human-supplied observations need the plan evidence form. Missing external or human milestones do not prevent adc_submit_review of a completed candidate; after candidate pass, execute already approved actions and record outcomes. Reviewed-code requires adc_code. Reviewers independently inspect the typed evidence and criteria, including target/artifact identity, and return changes if it only proves a weaker milestone. Evidence records are observations, never authority to merge, release or operate infrastructure."
 	}
 	return r, nil
 }
@@ -270,6 +275,8 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 	states := map[string]bool{}
 	revisions := map[string]string{}
 	reviews := taskReviews(e.Store, p.Task)
+	allRuns := taskRuns(e.Store, p.Task)
+	allDecisions := taskDecisions(e.Store, p.Task)
 	for i := range p.Steps {
 		step := &p.Steps[i]
 		step.Evidence = nil
@@ -290,6 +297,26 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 			step.Reason = "The recorded run is unavailable"
 			continue
 		}
+		step.Related = nil
+		step.Decisions = nil
+		members := map[string]bool{step.Run: true, step.Review: true}
+		for range allRuns {
+			for _, other := range allRuns {
+				if other.ID != p.Supervisor && (members[other.Parent] || members[other.ReviewOf]) {
+					members[other.ID] = true
+				}
+			}
+		}
+		for _, other := range allRuns {
+			if members[other.ID] && other.ID != step.Run && other.ID != step.Review && !other.Superseded {
+				step.Related = append(step.Related, PlanRelatedRun{other.ID, other.Org, other.Agent, other.Title, other.State})
+			}
+		}
+		for _, d := range allDecisions {
+			if d.State == "pending" && (members[d.Run] || (d.Action != nil && members[d.Action.Run]) || (d.Acceptance != nil && members[d.Acceptance.Run])) {
+				step.Decisions = append(step.Decisions, d)
+			}
+		}
 		step.Readiness = e.Store.runReadiness(run.ID)
 		step.ReviewReadiness = e.Store.runReadiness(step.Review)
 		step.Resources = e.Store.runResources(run.ID)
@@ -298,6 +325,10 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 		step.ArtifactRevision = e.artifactRevision(run)
 		step.State = run.State
 		step.Reason = run.Error
+		if run.CandidateRevision != "" {
+			step.State = "review"
+			step.Reason = "Independent candidate review before delivery; external milestones remain pending"
+		}
 		if run.State == "complete" {
 			step.State = "review"
 			step.Reason = "Waiting for independent review of the current evidence"
@@ -377,6 +408,17 @@ func (e *Engine) dispatchPlans() {
 		}
 		if root.State == "blocked" || root.State == "cancelled" || root.State == "complete" || pendingDecision(s, task.ID, root.ID) {
 			continue
+		}
+		// Reuse the same reviewer for final outcome evidence after candidate delivery.
+		for _, step := range stored.Steps {
+			var worker, reviewer Run
+			if s.Get(step.Run, &worker) == nil && s.Get(step.Review, &reviewer) == nil && worker.State == "complete" && reviewer.State == "complete" && reviewer.ReviewStage == "candidate" {
+				reviewer.State = "waiting"
+				reviewer.ReviewStage = ""
+				reviewer.Turns = 0
+				reviewer.Prompt += "\nFinal outcome review: the owner completed delivery. Verify every required milestone and actual external outcome now; the earlier candidate pass did not satisfy these gates."
+				_ = s.Put("run", reviewer.Org, reviewer.Task, reviewer.State, reviewer.ID, reviewer)
+			}
 		}
 		p := e.inspectPlan(stored)
 		for i, step := range p.Steps {
@@ -521,7 +563,7 @@ func (e *Engine) hasPlannedReview(step PlanStep, run Run, reviews []Review) bool
 	seen := map[string]bool{}
 	passed := false
 	for _, review := range reviews {
-		if review.Target != run.ID || review.Revision != revision || seen[review.Run] {
+		if review.Stage == "candidate" || review.Target != run.ID || review.Revision != revision || seen[review.Run] {
 			continue
 		}
 		seen[review.Run] = true

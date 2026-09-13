@@ -115,3 +115,12 @@ Qualification uses actual protected Git operations against explicitly synthetic 
 ## Visual plan inspection
 
 The assignment page shows a dependency graph, status counts and an Open full plan link. `/plan` provides a full-width graph with zoom/fit and a step selector. Selecting a card emphasizes its prerequisite and dependent branches and displays its existing brief, blocker, milestones, readiness, integration evidence and transcript links. `/live-plan` uses the same assignment membership/session checks as the task stream and updates only the plan fragment. SVG layout is computed from the durable dependency graph with escaped labels, without sending plan content to an external renderer. Step selection and viewport are local UI state; they never start or reassign work.
+
+
+## Candidate review and approved delivery
+
+A step can now submit a completed candidate with `adc_submit_review` before external or human milestones. ADC schedules its existing reviewer with a candidate-stage pin. A pass resumes the owner for delivery and preserves the outstanding gates; it never claims the step is complete. After recording real outcomes and finishing, the same reviewer verifies the final evidence. Draft PR delivery can use the candidate review with current prerequisites, explicit publication authority and an existing matching capability.
+
+For a concrete action requiring human approval, `adc_decision` accepts `action` with Run, Action, Target, Reference, Validation, Rollback and optional Requirement. Approval dispatches that executor. It performs the action through its existing tools, reconciles external outcomes on recovery, and calls `adc_action_result` with the observed summary, reference and time. ADC atomically records the linked milestone and marks the action done. An observation after execution is recorded even if evidence changed since approval; original and outcome artifact pins remain inspectable. This is agent-reported evidence, subject to final independent review, and does not add protected tool grants. Already-approved identical action requests return the existing decision instead of another approval card.
+
+Supervisors use `adc_repair_step` for unfinished execution notes or preflight declarations, with the current plan revision. Repairs retain gates, dependencies, artifacts and authority; in-flight candidate review and completed work are protected from this repair path. Humans approve meaningful actions; agents execute them and maintain the records. Truly human-supplied observations remain distinct from policy acceptance.

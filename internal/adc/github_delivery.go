@@ -46,11 +46,11 @@ func (g *githubGateway) deliverySource(ctx context.Context, args githubArguments
 	var task Assignment
 	_ = g.store.Get(r.Task, &task)
 	var source Run
-	if !task.Publication || g.store.Get(args.SourceRun, &source) != nil || source.Org != r.Org || source.Task != r.Task || source.Execution != "protected" || source.State != "complete" || source.Superseded || args.Index < 0 || args.Index >= len(source.Code) {
+	if !task.Publication || g.store.Get(args.SourceRun, &source) != nil || source.Org != r.Org || source.Task != r.Task || source.Execution != "protected" || (source.State != "complete" && !eCandidateReviewed(g.store, source)) || source.Superseded || args.Index < 0 || args.Index >= len(source.Code) {
 		return r, source, CodeEvidence{}, fmt.Errorf("publication authorization and a completed protected source artifact in this assignment are required")
 	}
 	e := &Engine{Store: g.store}
-	if !e.hasCurrentReview(source, taskReviews(g.store, r.Task)) || e.milestoneMissing(source) != "" {
+	if !e.hasCurrentReview(source, taskReviews(g.store, r.Task)) && !eCandidateReviewed(g.store, source) {
 		return r, source, CodeEvidence{}, fmt.Errorf("source needs current independent review and all required evidence before delivery")
 	}
 	if p, step, ok := e.plannedStep(source); ok {
@@ -58,7 +58,7 @@ func (g *githubGateway) deliverySource(ctx context.Context, args githubArguments
 		ready := false
 		for _, candidate := range view.Steps {
 			if candidate.Key == step.Key {
-				ready = candidate.State == "complete"
+				ready = candidate.State == "complete" || (eCandidateReviewed(g.store, source) && !(candidate.State == "blocked" && strings.HasPrefix(candidate.Reason, "Prerequisite ")))
 			}
 		}
 		if !ready {

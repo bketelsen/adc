@@ -124,14 +124,27 @@ func (e *Engine) submitMilestone(r Run, input milestoneInput, human string) (Mil
 	return e.recordMilestone(r, input, human, nil)
 }
 func (e *Engine) recordMilestone(r Run, input milestoneInput, human string, observation *DurableWait) (MilestoneEvidence, error) {
+	v, writes, err := e.prepareMilestone(r, input, human, observation)
+	if err != nil {
+		return v, err
+	}
+	if err := e.Store.Batch(writes...); err != nil {
+		return v, err
+	}
+	e.Store.Log(r.Org, r.Task, r.ID, "milestone", fmt.Sprintf("%s evidence revision %d recorded by %s (withdrawn: %t)", v.Requirement, v.Revision, v.Actor, v.Withdrawn))
+	return v, nil
+}
+
+// Caller holds Store.mu; no state is changed until the returned writes commit.
+func (e *Engine) prepareMilestone(r Run, input milestoneInput, human string, observation *DurableWait) (MilestoneEvidence, []Write, error) {
 	s := e.Store
 	p, step, ok := e.plannedStep(r)
 	if !ok {
-		return MilestoneEvidence{}, fmt.Errorf("only the current planned worker can record its milestone evidence")
+		return MilestoneEvidence{}, nil, fmt.Errorf("only the current planned worker can record its milestone evidence")
 	}
 	var task Assignment
 	if s.Get(r.Task, &task) != nil || task.Org != r.Org || task.State == "paused" || task.State == "cancelled" || r.State == "cancelled" {
-		return MilestoneEvidence{}, fmt.Errorf("resume the assignment and current step before changing evidence")
+		return MilestoneEvidence{}, nil, fmt.Errorf("resume the assignment and current step before changing evidence")
 	}
 	var req PlanRequirement
 	for _, candidate := range step.Requirements {
@@ -140,31 +153,31 @@ func (e *Engine) recordMilestone(r Run, input milestoneInput, human string, obse
 		}
 	}
 	if req.Key == "" || req.Kind != input.Kind || req.Target != input.Target {
-		return MilestoneEvidence{}, fmt.Errorf("requirement, kind and target must exactly match the active plan")
+		return MilestoneEvidence{}, nil, fmt.Errorf("requirement, kind and target must exactly match the active plan")
 	}
 	if req.Wait != nil && observation == nil {
-		return MilestoneEvidence{}, fmt.Errorf("this requirement is recorded only by its durable observer")
+		return MilestoneEvidence{}, nil, fmt.Errorf("this requirement is recorded only by its durable observer")
 	}
 	if req.Kind == "reviewed-code" {
-		return MilestoneEvidence{}, fmt.Errorf("use adc_code to register committed code; independent review satisfies this requirement")
+		return MilestoneEvidence{}, nil, fmt.Errorf("use adc_code to register committed code; independent review satisfies this requirement")
 	}
 	if (req.Kind == "human-evidence") != (human != "") {
-		return MilestoneEvidence{}, fmt.Errorf("human-evidence must be supplied by an organization member in the plan; other observations belong to its worker")
+		return MilestoneEvidence{}, nil, fmt.Errorf("human-evidence must be supplied by an organization member in the plan; other observations belong to its worker")
 	}
 	old := s.milestoneEvidence(r.ID, req.Key)
 	if old.Revision != input.Revision {
-		return old, fmt.Errorf("milestone evidence changed; inspect latest evidence before replacing")
+		return old, nil, fmt.Errorf("milestone evidence changed; inspect latest evidence before replacing")
 	}
 	if !input.Withdraw {
 		if strings.TrimSpace(input.Summary) == "" || len(input.Summary) > 8000 || strings.TrimSpace(input.Reference) == "" || len(input.Reference) > 2000 {
-			return old, fmt.Errorf("provide a concrete observation and its source reference (up to 8000 and 2000 characters)")
+			return old, nil, fmt.Errorf("provide a concrete observation and its source reference (up to 8000 and 2000 characters)")
 		}
 		observed, err := time.Parse(time.RFC3339, input.ObservedAt)
 		if err != nil || observed.After(time.Now().Add(time.Minute)) {
-			return old, fmt.Errorf("ObservedAt must be an RFC3339 observation time, not a future promise")
+			return old, nil, fmt.Errorf("ObservedAt must be an RFC3339 observation time, not a future promise")
 		}
 	} else if old.ID == "" {
-		return old, fmt.Errorf("no evidence to withdraw")
+		return old, nil, fmt.Errorf("no evidence to withdraw")
 	}
 	if input.Withdraw {
 		input.Summary = old.Summary
@@ -218,11 +231,7 @@ func (e *Engine) recordMilestone(r Run, input milestoneInput, human string, obse
 		p.State = "active"
 		writes = append(writes, Write{"execution-plan", p.Org, p.Task, p.State, p.ID, p})
 	}
-	if err := s.Batch(writes...); err != nil {
-		return old, err
-	}
-	s.Log(r.Org, r.Task, r.ID, "milestone", fmt.Sprintf("%s evidence revision %d recorded by %s (withdrawn: %t)", req.Key, v.Revision, actor, v.Withdrawn))
-	return v, nil
+	return v, writes, nil
 }
 
 // Milestones joins frozen requirements to their current evidence for the UI.

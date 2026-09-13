@@ -21,7 +21,11 @@ func (e *Engine) escalationWrites(r *Run, reason string) []Write {
 	if r.Parent != "" {
 		var parent Run
 		if s.Get(r.Parent, &parent) == nil {
-			parent.Prompt += "\nA delegated run is blocked: " + r.ID + " (" + r.Title + "). Evidence: " + reason + ". Assess all sides and change approach; use adc_reassign with an explicit new approach. Escalate to the human only for a real decision or exhausted approaches."
+			guidance := "Assess all sides and change approach; use adc_reassign with an explicit new approach."
+			if strings.HasPrefix(reason, "Invalid preflight declaration:") {
+				guidance = "Use adc_repair_step to correct the invalid preflight declaration; reassigning the unchanged declaration cannot fix it."
+			}
+			parent.Prompt += "\nA delegated run is blocked: " + r.ID + " (" + r.Title + "). Evidence: " + reason + ". " + guidance + " Escalate to the human only for a real decision or exhausted approaches."
 			if parent.State == "running" {
 				parent.UpdatesPending = true
 			} else if parent.State != "complete" && parent.State != "cancelled" && parent.State != "blocked" && !pendingDecision(s, parent.Task, parent.ID) {
@@ -85,8 +89,17 @@ func (e *Engine) Reassign(parent Run, id, agent, prompt string) (Run, error) {
 	if target.Superseded {
 		return Run{}, fmt.Errorf("this plan attempt was superseded; inspect adc_status and use its current run")
 	}
+	if target.ReviewOf != "" && target.State == "complete" {
+		var source Run
+		if s.Get(target.ReviewOf, &source) == nil && target.ReviewedRevision == e.revision(source) && e.hasCurrentReview(source, taskReviews(s, source.Task)) {
+			return Run{}, fmt.Errorf("this review already passed current evidence; resume the owner or supervisor, not the completed reviewer")
+		}
+	}
 	if target.Reassignments >= 3 {
 		return Run{}, fmt.Errorf("three recovery approaches have been attempted; present the evidence with adc_decision before further recovery")
+	}
+	if target.CandidateRevision != "" {
+		return Run{}, fmt.Errorf("candidate review is pending; recover its reviewer or wait for its verdict before reassigning the author")
 	}
 	if target.State == "running" {
 		return Run{}, fmt.Errorf("wait for the active run to yield before reassignment")

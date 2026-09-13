@@ -380,3 +380,90 @@ func TestGitHubDeliveryRevocationBeforePushRecordsNoMutation(t *testing.T) {
 		}
 	}
 }
+
+func TestCandidateDraftApprovalMergeAndRecoveryPipeline(t *testing.T) {
+	rig := githubFixture(t)
+	args := rig.prepare(t)
+	s, e := rig.s, rig.e
+	var dev, qa Agent
+	must(t, s.Get("dev", &dev))
+	must(t, s.Get("qa", &qa))
+	worker := rig.worker
+	worker.State = "running"
+	must(t, s.Put("run", worker.Org, worker.Task, worker.State, worker.ID, worker))
+	review := Run{ID: "pipeline-review", Org: worker.Org, Task: worker.Task, Parent: rig.caller.ID, Agent: qa.ID, Model: qa.Model, Family: Family(qa.Model), ReviewOf: worker.ID, Category: "review", State: "waiting"}
+	must(t, s.Put("run", review.Org, review.Task, review.State, review.ID, review))
+	plan := ExecutionPlan{ID: "plan:" + worker.Task, Org: worker.Org, Task: worker.Task, Supervisor: rig.caller.ID, State: "active", Revision: 1, Steps: []PlanStep{{PlanStepSpec: PlanStepSpec{Key: "deliver", Title: "Deliver fixture", Agent: dev.ID, Reviewer: qa.ID, Requirements: []PlanRequirement{{Key: "merge", Kind: "merged-pr", Target: "fixture/project#1", Criteria: "Exact reviewed tree merged"}}}, Worker: dev, Verifier: qa, Run: worker.ID, Review: review.ID}, {PlanStepSpec: PlanStepSpec{Key: "followup", Agent: dev.ID, Reviewer: qa.ID, DependsOn: []string{"deliver"}}, Worker: dev, Verifier: qa}}}
+	must(t, s.Put("execution-plan", plan.Org, plan.Task, plan.State, plan.ID, plan))
+	_, err := call(t, e, worker, "adc_submit_review", map[string]string{"Result": "Fixture candidate validated before publication"})
+	must(t, err)
+	reviewPlanStep(t, e, plan.Steps[0], "changes")
+	setRunning(t, s, &worker)
+	_, err = call(t, e, worker, "adc_submit_review", map[string]string{"Result": "Corrected fixture candidate independently checkable"})
+	must(t, err)
+	reviewPlanStep(t, e, plan.Steps[0], "pass")
+	// The new path still requires explicit publication; candidate review alone
+	// cannot grant it, nor can the draft exception authorize another tool.
+	var task Assignment
+	must(t, s.Get(worker.Task, &task))
+	task.Publication = false
+	must(t, s.Put("assignment", task.Org, "", task.State, task.ID, task))
+	if _, err = rig.call(t, rig.caller, "github_draft_pr", "not-authorized", args); err == nil || rig.posts.Load() != 0 {
+		t.Fatal("candidate review granted publication")
+	}
+	task.Publication = true
+	must(t, s.Put("assignment", task.Org, "", task.State, task.ID, task))
+	var policy ToolPolicy
+	must(t, s.Get("policy-"+rig.tools["github_draft_pr"].ID, &policy))
+	for _, grant := range task.Capabilities {
+		if grant.Tool == policy.Tool {
+			other := policy
+			other.Tool = rig.tools["github_repository"].ID
+			if s.operationGrantMatches(rig.caller, other, grant) {
+				t.Fatal("draft exception authorized another change tool")
+			}
+		}
+	}
+	// A lost successful draft response is reconciled by the durable gateway.
+	rig.drop.Store(true)
+	_, err = rig.call(t, rig.caller, "github_draft_pr", "pipeline-draft", args)
+	if err == nil || rig.posts.Load() != 1 {
+		t.Fatal("fixture did not exercise lost draft response", err)
+	}
+	_, err = rig.call(t, rig.caller, "github_draft_pr", "pipeline-draft", args)
+	must(t, err)
+	if rig.posts.Load() != 1 {
+		t.Fatal("duplicate PR")
+	}
+	setRunning(t, s, &worker)
+	d, err := e.submitDecision(worker, decisionInput{Brief: "Approve merging the reviewed fixture PR; the agent executes it.", Question: "Exact fixture head with passing CI.", Action: &decisionActionInput{Run: worker.ID, Action: "Merge exact reviewed fixture head", Target: "fixture/project#1", Reference: args.Commit, Validation: "Compare main tree to reviewed head", Rollback: "Separate revert PR", Requirement: "merge"}})
+	must(t, err)
+	must(t, decisionPost(t, NewWeb(s, e, false), d, "approve", "", nil))
+	// Restart after approval. The synthetic executor performs a real local Git
+	// mutation, never a production GitHub merge; observe it before recording.
+	e = NewEngine(s)
+	setRunning(t, s, &worker)
+	gitFixtureCommand(t, rig.remote, "update-ref", "refs/heads/main", args.Commit)
+	if gitFixtureCommand(t, rig.remote, "rev-parse", "main^{tree}") != gitFixtureCommand(t, rig.remote, "rev-parse", args.Commit+"^{tree}") {
+		t.Fatal("wrong merged tree")
+	}
+	result := actionResultInput{Decision: d.ID, Summary: "Fixture main matches exact reviewed commit tree", Reference: "fixture:merged/1", ObservedAt: now()}
+	_, err = call(t, e, worker, "adc_action_result", result)
+	must(t, err)
+	_, err = call(t, e, worker, "adc_action_result", result)
+	must(t, err)
+	if s.milestoneEvidence(worker.ID, "merge").Revision != 1 {
+		t.Fatal("duplicate merge observation")
+	}
+	_, err = call(t, e, worker, "adc_finish", map[string]string{"Result": "Draft delivered, human approved, agent merged and verified"})
+	must(t, err)
+	planDispatch(e)
+	if s.taskPlan(worker.Task).Steps[1].Run != "" {
+		t.Fatal("dependent started without final review")
+	}
+	reviewPlanStep(t, e, plan.Steps[0], "pass")
+	planDispatch(e)
+	if s.taskPlan(worker.Task).Steps[1].Run == "" {
+		t.Fatal("dependent did not resume after observed delivery review")
+	}
+}
