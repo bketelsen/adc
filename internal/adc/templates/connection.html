@@ -1,0 +1,37 @@
+{{define "connection-page"}}
+<header class="page-head"><div><p class="eyebrow">ORGANIZATION TOOLS</p><h1>Edit connection<span class="title-dot">.</span></h1><p class="muted">{{.Connection.Connection.Name}} · {{.Connection.Connection.Transport}}</p></div><a class="quiet" href="/connections?org={{.Org.ID}}">Back to connections</a></header>
+<section class="panel connection-editor">
+<form method="post" action="/connections?org={{.Org.ID}}">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<input type="hidden" name="id" value="{{.Connection.Connection.ID}}">
+<input type="hidden" name="revision" value="{{.Connection.Revision}}">
+<input type="hidden" name="transport" value="{{.Connection.Connection.Transport}}">
+<input type="hidden" name="return" value="/connection?org={{.Org.ID}}&id={{.Connection.Connection.ID}}">
+<label>Name<input name="name" value="{{.Connection.Connection.Name}}" required></label>
+{{if eq .Connection.Connection.Transport "github"}}
+<label>Allowed repositories<textarea name="github_scopes" rows="4" required>{{.Connection.Scopes}}</textarea></label>
+<p class="help">One owner/repository per line, or an intentional owner/* scope.</p>
+<label>Replacement GitHub access token<input name="github_token" type="password" autocomplete="new-password" placeholder="Leave blank to keep the saved token"></label>
+{{else}}
+{{if eq .Connection.Connection.Transport "stdio"}}
+<label>Command<input name="command" value="{{.Connection.Connection.Command}}" required></label>
+<label>Arguments (JSON)<textarea name="args" rows="3" required>{{.Connection.ArgsJSON}}</textarea></label>
+<input type="hidden" name="url" value="{{.Connection.Connection.URL}}">
+{{else}}
+<label>HTTP URL<input name="url" value="{{.Connection.Connection.URL}}" required></label>
+<input type="hidden" name="command" value="{{.Connection.Connection.Command}}">
+{{end}}
+<fieldset><legend>Environment variables</legend>
+<p class="help">Saved names: {{range .Connection.EnvKeys}}<code>{{.}}</code> {{else}}None{{end}}</p>
+<label>Environment changes (JSON)<textarea name="env" rows="3" spellcheck="false" autocomplete="off" placeholder='{"NAME":"replacement value","OLD_NAME":null}'></textarea></label>
+</fieldset>
+<fieldset><legend>HTTP headers</legend>
+<p class="help">Saved names: {{range .Connection.HeaderKeys}}<code>{{.}}</code> {{else}}None{{end}}</p>
+<label>Header changes (JSON)<textarea name="headers" rows="3" spellcheck="false" autocomplete="off" placeholder='{"Authorization":"Bearer replacement","OLD_HEADER":null}'></textarea></label>
+</fieldset>
+<p class="help">Saved values are hidden. Leave a field blank or use {} to keep its values. Include only names you want to change; use null to remove a name. New values are sealed when saved.</p>
+{{end}}
+<p class="help">Agent assignments stay connected. After changing configuration, refresh the tool catalog in Permissions and review changed access. A worker currently using this connection must finish its turn or be paused before you can save.</p>
+<div class="inline"><button class="primary">Save changes</button><a class="quiet" href="/permissions?org={{.Org.ID}}&connection={{.Connection.Connection.ID}}">Tool permissions</a></div>
+</form></section>
+{{end}}

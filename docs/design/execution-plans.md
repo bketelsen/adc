@@ -110,3 +110,8 @@ Draft delivery requires explicit assignment publication authorization, current i
 A durable delivery record reconciles its existing branch and draft after an interrupted response, including across restart, instead of creating another PR. Known failures before any mutation are labelled failed; attempted effects with no confirmed outcome are uncertain. Both can be retried with the same operation identifier in this narrow adapter after resolving the cause; arguments remain pinned and a reviewed change needs a new concrete operation proposal. Generic MCP uncertain mutations still require service-specific reconciliation. New source runs have distinct delivery branches; this implementation does not automatically consolidate or close earlier drafts.
 
 Qualification uses actual protected Git operations against explicitly synthetic local bare repositories and authenticated HTTP fixtures. No real GitHub PR was published to qualify this feature. Live provider qualification separately exercises Codex execution, automatic preflight and independent Claude review.
+
+
+## Visual plan inspection
+
+The assignment page shows a dependency graph, status counts and an Open full plan link. `/plan` provides a full-width graph with zoom/fit and a step selector. Selecting a card emphasizes its prerequisite and dependent branches and displays its existing brief, blocker, milestones, readiness, integration evidence and transcript links. `/live-plan` uses the same assignment membership/session checks as the task stream and updates only the plan fragment. SVG layout is computed from the durable dependency graph with escaped labels, without sending plan content to an external renderer. Step selection and viewport are local UI state; they never start or reassign work.

@@ -7,6 +7,7 @@ const path=require('node:path'),fs=require('node:fs');
  await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/task?org=org&id=task');
+ await page.locator('#plan-details > summary').click();
  const detail=page.locator('#integration-R1');await detail.locator(':scope > summary').click();
  await detail.getByText('fixture:producer',{exact:true}).waitFor();
  const check=page.locator('#validation-R1-unit');await check.locator(':scope > summary').click();

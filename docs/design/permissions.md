@@ -38,3 +38,8 @@ Do not migrate working tool classifications by inference. Review the concrete po
 
 
 Protected execution-plan mutations now use step/artifact-bound operation proposals. The existing request tool accepts a concrete action context and binds exact arguments to current evidence; broader standing grants cannot substitute for this operation approval. See [execution plans](execution-plans.md#step-bound-operational-approvals-ep5). Ordinary read capabilities and non-plan workflows retain their prior scope behavior.
+
+
+### Editing organization connections
+
+Use Connections → Edit to update an existing MCP or built-in GitHub connection. Organization membership and CSRF checks apply; the connection ID and agent assignments are retained. Only saved environment/header names are displayed. Blank change fields or `{}` preserve saved values, JSON strings replace named values, and JSON null removes them; GitHub's blank replacement token preserves its existing token. Secret updates are sealed at rest. Revision checks reject stale forms. Changes are refused while a referencing run is running or still has an active execution handle; unrelated work can continue. After a configuration change, refresh the catalog in Permissions and review changed access: existing gateway fingerprint checks reject the old configuration's grants. Already admitted remote calls retain the existing cancellation/reconciliation limitations.

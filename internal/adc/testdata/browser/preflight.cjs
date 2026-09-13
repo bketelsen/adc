@@ -7,6 +7,7 @@ const path=require('node:path'),fs=require('node:fs');
  await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/task?org=org&id=task');
+ await page.locator('#plan-details > summary').click();
  const details=page.locator('#preflight-R1');await details.locator(':scope > summary').click();
  await details.getByText('Fixture reviewer unavailable',{exact:false}).waitFor();
  await page.getByLabel('Message or steering').fill('Keep this question');

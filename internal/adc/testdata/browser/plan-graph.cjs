@@ -1,0 +1,46 @@
+const {chromium}=require(process.env.ADC_PLAYWRIGHT_MODULE || 'playwright');
+const path=require('node:path'),fs=require('node:fs');
+(async()=>{
+ const browser=await chromium.launch({headless:true});
+ try{
+ const base=process.argv[2],context=await browser.newContext({viewport:{width:1600,height:1100}});
+ await context.addCookies([{name:'adc_session',value:'transcript-fixture',url:base}]);
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/task?org=org&id=task');
+ if(await page.locator('#plan-details').getAttribute('open')!==null)throw Error('Task still opens all detailed text');
+ await page.getByRole('link',{name:'Open full plan ↗'}).click();
+ await page.locator('.plan-node.selected').waitFor();
+ if(await page.locator('[data-plan-node]').count()!==33)throw Error('Graph dropped nodes');
+ if(await page.locator('.plan-edge').count()!==50)throw Error('Graph dropped dependencies');
+ await page.locator('#plan-step-N02').waitFor({state:'visible'});
+ await page.locator('#plan-step-N01').waitFor({state:'hidden'});
+ await page.locator('#plan-brief-N02 > summary').click();
+ await page.getByRole('button',{name:'Fit graph',exact:true}).click();
+ const width=await page.locator('#plan-map-svg').getAttribute('width');
+ await page.request.get(base+'/fixture-graph-update');
+ await page.locator('.plan-node.blocked[data-plan-node="N02"]').waitFor();
+ if(await page.locator('#plan-map-svg').getAttribute('width')!==width)throw Error('Live patch reset zoom');
+ if(await page.locator('#plan-brief-N02').getAttribute('open')===null)throw Error('Live patch closed inspected brief');
+ if(!await page.locator('#plan-step-N02').isVisible())throw Error('Live patch lost selection');
+ await page.getByLabel('Jump to step').selectOption('N07');
+ if(!await page.locator('#plan-step-N07').isVisible()||await page.locator('#plan-step-N02').isVisible())throw Error('Jump did not select inspector');
+ if(!await page.locator('.plan-edge.highlight').count()||!await page.locator('.plan-node.dimmed').count())throw Error('Dependency emphasis absent');
+ await page.getByRole('button',{name:'Show all branches'}).click();
+ await page.getByRole('button',{name:'Fit graph',exact:true}).click();
+ if(await page.locator('.plan-node.dimmed').count())throw Error('Clear selection failed');
+ const dir=path.resolve(__dirname,'../../../../work');fs.mkdirSync(dir,{recursive:true});
+ await page.screenshot({path:path.join(dir,'ui-plan-graph-desktop.png'),fullPage:true});
+ await page.getByLabel('Jump to step').selectOption('N01');
+ await page.screenshot({path:path.join(dir,'ui-plan-graph-selected.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.getByRole('button',{name:'100%',exact:true}).click();
+ await page.getByLabel('Jump to step').selectOption('N07');
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone page overflow');
+ await page.screenshot({path:path.join(dir,'ui-plan-graph-mobile.png'),fullPage:true});
+ await page.getByLabel('Jump to step').selectOption('N02');
+ await page.locator('#plan-step-N02').getByRole('link',{name:'Worker transcript →',exact:true}).click();
+ await page.locator('#run-header').waitFor();
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('PASS: 33 nodes and all 50 edges, full graph, selection/branch focus, live status with retained zoom/details, phone scrolling/jump and worker transcript navigation');
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

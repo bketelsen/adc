@@ -28,6 +28,7 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Connection                                                  ConnectionPage
 	Selfhosted                                                  SelfhostedAccountPage
 	Plan                                                        ExecutionPlan
 	Run                                                         Run
@@ -80,7 +81,13 @@ type Web struct {
 }
 
 func NewWeb(s *Store, e *Engine, secure bool) *Web {
-	f := template.FuncMap{"agentRunView": func(a Agent, runs []Run) AgentRunView { return AgentRunView{Agent: a, Runs: runs} }, "permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "agentname": func(agents []Agent, id string) string {
+	f := template.FuncMap{"planGraph": planGraph, "clip": func(s string, n int) string {
+		r := []rune(s)
+		if len(r) > n {
+			return string(r[:n-1]) + "…"
+		}
+		return s
+	}, "agentRunView": func(a Agent, runs []Run) AgentRunView { return AgentRunView{Agent: a, Runs: runs} }, "permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "agentname": func(agents []Agent, id string) string {
 		for _, a := range agents {
 			if a.ID == id {
 				return a.Name
@@ -219,6 +226,10 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		if err := w.action(r, p); err != nil {
 			p.Error = err.Error()
+			if r.URL.Path == "/connections" && r.FormValue("id") != "" && w.connectionPage(r.FormValue("id"), &p) == nil {
+				w.render(rw, p)
+				return
+			}
 			if r.URL.Path == "/proposal-action" {
 				if w.Store.Get(r.FormValue("id"), &p.Proposal) == nil && p.Proposal.Org == p.Org.ID {
 					w.proposalPage(&p)
@@ -257,6 +268,11 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	case "/live-work":
 		w.liveWork(rw, r, p)
 		return
+	case "/connection":
+		if err := w.connectionPage(r.URL.Query().Get("id"), &p); err != nil {
+			http.NotFound(rw, r)
+			return
+		}
 	case "/selfhosted-account":
 		if err := w.selfhostedAccountPage(r, &p); err != nil {
 			http.NotFound(rw, r)
@@ -398,7 +414,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.View = "library"
 		p.Title = "Documents"
 		p.Documents = list[Document](w.Store, "document", orgID)
-	case "/task", "/live":
+	case "/task", "/live", "/plan", "/live-plan":
 		id := r.URL.Query().Get("id")
 		if w.Store.Get(id, &p.Task) != nil || !w.member(u.ID, p.Task.Org) {
 			http.NotFound(rw, r)
@@ -407,6 +423,9 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		_ = w.Store.Get(p.Task.Org, &p.Org)
 		p.Title = p.Task.Title
 		p.View = "task"
+		if r.URL.Path == "/plan" || r.URL.Path == "/live-plan" {
+			p.View = "plan"
+		}
 		p.Plan = w.Engine.inspectPlan(w.Store.taskPlan(id))
 		p.Runs = taskRuns(w.Store, id)
 		p.Agents = append(list[Agent](w.Store, "agent", p.Task.Org), list[Agent](w.Store, "guide", p.Task.Org)...)
@@ -418,7 +437,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.Reviews = taskReviews(w.Store, id)
 		p.Traces = taskTraces(w.Store, id)
 		p.Decisions = taskDecisions(w.Store, id)
-		if r.URL.Path == "/live" {
+		if r.URL.Path == "/live" || r.URL.Path == "/live-plan" {
 			w.live(rw, r, p)
 			return
 		}
@@ -583,63 +602,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		}
 		return SaveAgent(s, a, f("category_default") == "on")
 	case "/connections":
-		x := Connection{ID: ID(), Org: p.Org.ID, Name: f("name"), Transport: f("transport"), Command: f("command"), URL: f("url"), Env: map[string]string{}, Headers: map[string]string{}}
-		if x.Name == "" {
-			return errors.New("Connection name is required")
-		}
-		if x.Transport == "github" {
-			if strings.TrimSpace(f("github_token")) == "" {
-				return errors.New("Provide a GitHub access token for this connection")
-			}
-			x.Command, x.URL = "", ""
-			x.Args = strings.Fields(f("github_scopes"))
-			if len(x.Args) == 0 || len(x.Args) > 100 {
-				return errors.New("List 1–100 allowed owner/repository or owner/* scopes")
-			}
-			for _, scope := range x.Args {
-				owner, repo, ok := strings.Cut(scope, "/")
-				if !ok || (repo != "*" && !validGitHubRepository(owner, repo)) || !validGitHubRepository(owner, "scope") {
-					return errors.New("Use owner/repository or owner/* for each GitHub scope")
-				}
-			}
-			sealed, err := s.Seal(strings.TrimSpace(f("github_token")))
-			if err != nil {
-				return err
-			}
-			x.Headers["GitHubToken"] = sealed
-			return s.Put("connection", x.Org, "", "", x.ID, x)
-		}
-		if x.Transport == "stdio" {
-			if x.Command == "" {
-				return errors.New("Command is required")
-			}
-			if err := json.Unmarshal([]byte(f("args")), &x.Args); err != nil {
-				return errors.New("Arguments must be a JSON array")
-			}
-		} else if x.Transport == "http" {
-			u, err := url.Parse(x.URL)
-			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-				return errors.New("Enter an HTTP(S) MCP URL")
-			}
-		} else {
-			return errors.New("Choose stdio or HTTP")
-		}
-		for key, dst := range map[string]map[string]string{"env": x.Env, "headers": x.Headers} {
-			raw := map[string]string{}
-			if f(key) != "" {
-				if err := json.Unmarshal([]byte(f(key)), &raw); err != nil {
-					return fmt.Errorf("%s must be a JSON object", key)
-				}
-			}
-			for k, v := range raw {
-				sealed, err := s.Seal(v)
-				if err != nil {
-					return err
-				}
-				dst[k] = sealed
-			}
-		}
-		return s.Put("connection", x.Org, "", "", x.ID, x)
+		return w.saveConnection(r, p.Org.ID)
 	case "/team-proposals":
 		if f("prompt") == "" || Family(f("model")) == "" {
 			return errors.New("Describe your organization and choose an explicit supervisor model")
@@ -927,7 +890,11 @@ func (w *Web) live(rw http.ResponseWriter, r *http.Request, p Page) {
 		p.Traces = taskTraces(w.Store, p.Task.ID)
 		_ = w.Store.Get(p.Task.ID, &p.Task)
 		var b bytes.Buffer
-		for _, name := range []string{"execution-plan", "taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"} {
+		names := []string{"execution-plan", "taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"}
+		if p.View == "plan" {
+			names = []string{"execution-plan"}
+		}
+		for _, name := range names {
 			b.Reset()
 			if err := w.templates.ExecuteTemplate(&b, name, p); err != nil {
 				return
