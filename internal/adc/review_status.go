@@ -11,7 +11,7 @@ func (e *Engine) reviewNeeds(task string) []map[string]string {
 		if r.Parent == "" || r.Category == "review" || r.State != "complete" {
 			continue
 		}
-		if r.Category != "implementation" && len(r.Code) == 0 && !owners[r.ID] && e.obligationObservation(r).ID == "" {
+		if r.Category != "implementation" && len(r.Code) == 0 && !owners[r.ID] && e.obligationObservation(r).ID == "" && !e.hasOwnerDeliverable(r) {
 			continue
 		}
 		if !e.hasCurrentReview(r, reviews) {

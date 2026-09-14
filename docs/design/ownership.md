@@ -12,7 +12,7 @@ The substantive verification worker records `adc_obligation_result` with pass/fa
 
 Source pause/cancellation, a superseded source run, missing funding/access or cancellation of verification retains a visible blocker rather than manufacturing a new assignment. Cancelling an obligation pauses and stops its unfinished verification. Gateway and standard execution paths recheck obligation/source validity. An expired activation or restart is not permission to replay an external mutation.
 
-P1 retains blockers for reassessment; owner inboxes, automatic supervisor recovery of these obligations, richer deadlines and effort accounting arrive in P3/P4. Discovery interviews and selected-text knowledge correction arrive in P2. The current area page uses ordinary navigation/forms; live briefing and richer pagination arrive with the interface phases. Do not claim these later behaviors are already delivered.
+Permanent-owner correspondence and maintained knowledge are now available. Approved bounded assessments and a live supervisor briefing are described in [attention](attention.md). Broader event-driven recovery remains follow-through; an unlinked retained blocker does not itself authorize a new wake.
 
 New area/obligation records are additive. Existing task IDs, approvals, schedules, plans and review pins are unchanged when no obligation observation exists. Do not downgrade to an older binary with active verification assignments: the older engine does not understand their source-validity checks. Pause new attention and reconcile active verification before any rollback. A full knowledge export UI and general schema migration framework are not included in this slice.
 

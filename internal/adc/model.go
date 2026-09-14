@@ -19,6 +19,8 @@ type Agent struct {
 	Tools                                                                     []string
 }
 type Assignment struct {
+	Attention                                                               *AttentionPolicy
+	AttentionStarted                                                        string
 	Area                                                                    string
 	Obligation                                                              string
 	ConstrainCapabilities                                                   bool
@@ -34,6 +36,7 @@ type Assignment struct {
 	Revision                                                                int
 }
 type Run struct {
+	AttentionStage                                                                                                                    string
 	CandidateRevision, ReviewStage                                                                                                    string
 	Preflight                                                                                                                         *PreflightSpec
 	Superseded                                                                                                                        bool

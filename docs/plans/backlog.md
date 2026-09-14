@@ -113,3 +113,8 @@ Do not adopt the article’s secret-copying example, mandatory monorepo directio
 ### Follow-up after self-hosted provider support
 
 - **Expand explicit funding beyond the current two-account portfolio.** Allow an explicitly selected set of provider accounts from the same human, preserving per-run funding pins and schedule/proposal snapshots. Reason: Codex supervision, local Qwen execution and direct Claude review use three providers; the current primary/additional pair supports only two. Do not discover or fund extra accounts implicitly. Existing two-account assignments must retain exactly their approved portfolio.
+
+
+### Ownership assessment follow-through
+
+P4 live qualification recovered scan completion without stored observations (now blocked at the tool boundary), ambiguous optional attention-policy arguments on one-off proposals (schema/prompt clarified), and brief-length errors (limit clarified). The existing fast-child `adc_wait` race still recovers but wastes a turn. P5 should make that handoff response actionable without an error and expose targeted bounded status retrieval: one two-area fixture's whole `adc_status` grew beyond the provider's inline output limit. Keep this work ahead of cosmetic additions; it directly addresses avoidable context and review churn. First live assessment hit its budget and retained a pause; a corrected Sol/Opus cycle finished with one shared proposal and no human continuation. See checkpoint for final qualification/deployment status.

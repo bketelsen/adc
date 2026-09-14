@@ -108,3 +108,11 @@ html[data-theme=dark]{color-scheme:dark;--bg:#171e2a;--surface:#202938;--surface
 .area-panel details[open]>summary::after{content:'−'}
 .area-panel details article{border-top:1px solid var(--line);padding-top:16px;margin-top:12px}
 .area-panel>h3{margin-top:24px}
+
+/* Maintained owner briefing: current state first, dated narrative second. */
+.ownership-briefing{margin:1.6rem 0 2rem;padding:1.25rem;border:1px solid var(--line);border-radius:12px}
+.attention-signals{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:.75rem;margin:1rem 0}
+.attention-signal{display:flex;flex-direction:column;gap:.5rem;padding:.9rem;border:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;overflow-wrap:anywhere}
+.attention-signal .badge{align-self:flex-start}.attention-signal small{color:var(--muted)}
+.attention-brief{padding:1rem 0}.attention-narrative{max-width:76ch;overflow-wrap:anywhere}.attention-narrative>*:last-child{margin-bottom:.8rem}
+@media(max-width:600px){.ownership-briefing{padding:1rem}.ownership-briefing .section-heading{align-items:flex-start;gap:.5rem;flex-wrap:wrap}}

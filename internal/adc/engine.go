@@ -150,6 +150,7 @@ func (e *Engine) tick(ctx context.Context) {
 	defer s.mu.Unlock()
 	e.dispatchObligations(time.Now().UTC())
 	e.boundDiscovery()
+	e.boundAttentionCycles(time.Now().UTC())
 	e.dispatchOwnerRequests()
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
@@ -255,7 +256,7 @@ func (e *Engine) tick(ctx context.Context) {
 			if s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
 				continue
 			}
-			if !e.attentionCapacity(t) {
+			if !e.attentionRunCapacity(t, r) {
 				continue
 			}
 			a, accountErr := s.runAccount(t, r)
@@ -294,11 +295,14 @@ func (e *Engine) tick(ctx context.Context) {
 			r.LastStarted = now()
 			r.Error = ""
 			r.NextAt = ""
-			if err := s.Put("run", r.Org, r.Task, r.State, r.ID, r); err != nil {
-				continue
+			if t.Attention != nil && t.AttentionStarted == "" {
+				t.AttentionStarted = now()
 			}
 			t.State = "running"
-			_ = s.Put("assignment", t.Org, "", t.State, t.ID, t)
+			// Claim and first attention timestamp survive interruption together.
+			if err := s.Batch(Write{"run", r.Org, r.Task, r.State, r.ID, r}, Write{"assignment", t.Org, "", t.State, t.ID, t}); err != nil {
+				continue
+			}
 			counts[a.ID]++
 			runCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 			e.mu.Lock()
@@ -323,6 +327,7 @@ func (e *Engine) revision(r Run) string {
 	h.Write(code)
 	h.Write(e.milestoneRevision(r))
 	h.Write(e.observationRevision(r))
+	h.Write(e.ownerDeliverableRevision(r))
 	if v := e.Store.integrationEvidence(r.ID); v.ID != "" {
 		b, _ := json.Marshal(v)
 		h.Write(b)
@@ -491,6 +496,7 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 	contextData["recent_tool_evidence"] = recent
 	contextData["owner"] = e.ownerContext(r)
 	contextData["owner_coordination"] = e.requestContext(r)
+	contextData["assessment"] = e.assessmentContext(t)
 	contextData["observation"] = e.obligationObservation(r)
 	b, _ := json.Marshal(contextData)
 	s.mu.Unlock()
@@ -662,6 +668,13 @@ func (e *Engine) CreateAssignment(t Assignment) error {
 
 func (e *Engine) assignmentWrites(t Assignment) ([]Write, error) {
 	s := e.Store
+	if t.Attention != nil {
+		var err error
+		t, err = e.prepareAttention(t)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var agent Agent
 	if err := s.Get(t.Owner, &agent); err != nil || agent.Org != t.Org {
 		return nil, fmt.Errorf("choose an agent in this organization")
@@ -814,7 +827,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return d, nil
 		}),
-		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence and suggested owner agent ID; dependencies may be empty. SourceDocument optionally pins a document revision: supply the exact document ID from adc_read_document or document_catalog, never a title, path or URL. This grants no execution permission and does not block the current assignment. Inspect returned related work to avoid duplicates. To revise an existing pending proposal supply ID and Revision plus the full revised fields. For recurring work include Cadence with Frequency interval/daily/weekly; IntervalMinutes (minimum 15) for interval, or Timezone (IANA), At (HH:MM) and Weekday (0 Sunday to 6 Saturday) for calendar schedules. An empty Cadence Frequency means one-off. Include Validation and Rollback plans for recurring actions. Only human acceptance activates schedules. Only humans can accept or decline. Use proposals for future work outside current scope, never for routine corrections already authorized.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence and suggested owner agent ID; dependencies may be empty. SourceDocument optionally pins a document revision: supply the exact document ID from adc_read_document or document_catalog, never a title, path or URL. This grants no execution permission and does not block the current assignment. Inspect returned related work to avoid duplicates. To revise an existing pending proposal supply ID and Revision plus the full revised fields. For recurring work include Cadence with Frequency interval/daily/weekly; IntervalMinutes (minimum 15) for interval, or Timezone (IANA), At (HH:MM) and Weekday (0 Sunday to 6 Saturday) for calendar schedules. An empty Cadence Frequency means one-off. Attention is ONLY for proposing a NEW recurring owner assessment program: areas plus scan/investigation/review activation budgets, maximum proposals, minutes and concurrency. OMIT Attention or use null for ordinary one-off follow-up work; never copy the current assignment policy. Include Validation and Rollback plans for recurring actions. Only human acceptance activates schedules. Only humans can accept or decline. Use proposals for future work outside current scope, never for routine corrections already authorized.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -830,11 +843,13 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if err != nil {
 				return nil, err
 			}
+			var task Assignment
+			_ = s.Get(r.Task, &task)
 			docs := taskDocs(s, r.Task)
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"assessment": e.assessmentContext(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -871,6 +886,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			return e.Reassign(parent, p.Run, p.Agent, p.Reason)
 		}),
 		copilot.DefineTool("adc_delegate", "Delegate a bounded task to an existing agent, or a temporary worker using a category's model default. A review must identify ReviewOf. Declare required MCP connection IDs in RequiredTools so ADC rejects a handoff without that access before starting a worker. Optional Preflight declares Commands (executable names), Models (also check the planned reviewer), Repositories (Connection/Owner/Repository/Write), and named Directories/Ports for isolated test resources. ADC holds dispatch on missing prerequisites without using a model slot. Tools optionally selects a subset of your grants. Workers may arrange their own independent review before finishing: set ReviewOf to your own run ID, then call adc_finish. ADC holds the reviewer until you finish and gives supervision to your parent. For other delegated work use adc_wait after dispatching.", func(p struct {
+			AttentionStage                           string
 			Agent, Category, Title, Prompt, ReviewOf string
 			Tools                                    []string
 			RequiredTools                            []string
@@ -927,7 +943,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					continue
 				}
 				if p.ReviewOf == "" {
-					if existing.Prompt == p.Prompt && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
+					if (existing.Prompt == p.Prompt || existing.Prompt == p.Prompt+attentionScanInstructions) && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
 						return existing, nil
 					}
 				} else {
@@ -971,6 +987,33 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					}
 					r.ReviewedRevision = e.revision(target)
 				}
+			}
+			if assignment.Attention != nil {
+				if !attentionStage(p.AttentionStage) {
+					return Run{}, fmt.Errorf("AttentionStage must be scan, investigate or review")
+				}
+				r.AttentionStage = p.AttentionStage
+				if r.AttentionStage == "" {
+					r.AttentionStage = parent.AttentionStage
+				}
+				if r.AttentionStage == "" {
+					r.AttentionStage = "investigate"
+				}
+				if r.ReviewOf != "" {
+					r.AttentionStage = "review"
+				}
+				if r.AttentionStage == "review" && r.ReviewOf == "" {
+					return Run{}, fmt.Errorf("review stage requires an independent ReviewOf target")
+				}
+				if parent.Parent != "" && r.ReviewOf == "" && r.AttentionStage != parent.AttentionStage {
+					return Run{}, fmt.Errorf("only the accountable supervisor allocates investigation stages")
+				}
+			}
+			if assignment.Attention != nil && e.attentionStageRemaining(assignment, r) <= 0 {
+				return nil, fmt.Errorf("the %s stage has spent its approved activation budget; retain unknowns or finish within remaining scope", runAttentionStage(r))
+			}
+			if assignment.Attention != nil && r.AttentionStage == "scan" && r.ReviewOf == "" {
+				r.Prompt += attentionScanInstructions
 			}
 			r.Workspace = filepath.Join(s.Dir, "workspaces", r.Org, r.Task, r.ID)
 			err = s.Put("run", r.Org, r.Task, r.State, r.ID, r)
@@ -1135,6 +1178,9 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if r.ReviewOf != "" {
 				return "", fmt.Errorf("use adc_review")
 			}
+			if err := e.attentionWorkerComplete(assignment, r); err != nil {
+				return "", err
+			}
 			if missing := e.milestoneMissing(r); missing != "" {
 				return "", fmt.Errorf("%s; record concrete evidence or wait for human evidence before finishing", missing)
 			}
@@ -1192,7 +1238,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					if pass {
 						reviewed = true
 					}
-					if (target.Category == "implementation" || len(target.Code) > 0 || documentOwners[target.ID] || e.obligationObservation(target).ID != "") && !pass {
+					if (target.Category == "implementation" || len(target.Code) > 0 || documentOwners[target.ID] || e.obligationObservation(target).ID != "" || e.hasOwnerDeliverable(target)) && !pass {
 						return "", fmt.Errorf("independent review required for %s", target.Title)
 					}
 				}
@@ -1202,6 +1248,9 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 				var task Assignment
 				if s.Get(r.Task, &task) != nil {
 					return "", fmt.Errorf("assignment missing")
+				}
+				if err := e.attentionComplete(task); err != nil {
+					return "", err
 				}
 				task.State = "ready"
 				task.Output = p.Result
@@ -1232,6 +1281,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)
 	tools = append(tools, e.ownershipTools(original)...)
+	tools = append(tools, e.attentionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
 	filtered := tools[:0]
 	for _, tool := range tools {

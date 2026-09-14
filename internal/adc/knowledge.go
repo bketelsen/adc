@@ -263,6 +263,9 @@ func (e *Engine) attentionCapacity(t Assignment) bool {
 	if t.Kind == "owner-discovery" {
 		limit = 24
 	}
+	if t.Attention != nil {
+		limit = t.Attention.Scan + t.Attention.Investigation + t.Attention.Review
+	}
 	if t.Obligation != "" {
 		limit = 48
 	}
