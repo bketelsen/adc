@@ -1,6 +1,6 @@
 # Updex contribution pilot — September 14, 2026
 
-Status: real-source, real-provider pilot passed. The candidate is prepared locally for publication review. No Updex PR, merge or release was created. The pilot used a separate ADC qualification database and a loopback HTTP listener; it did not manufacture production organization activity or expose the live server publicly.
+Status: real-source, real-provider pilot passed. Brian authorized publication and [draft PR #417](https://github.com/frostyard/updex/pull/417) is open. No merge or release occurred. The pilot used a separate ADC qualification database and a loopback HTTP listener; it did not manufacture production organization activity or expose the live server publicly.
 
 ## Useful deliverable
 
@@ -36,4 +36,4 @@ The initial packet attempt included AGENTS.md, whose public `id-token: write` te
 
 This proves a useful real repository change can travel through anonymous HTTP contribution, cross-family internal admission, automatic owner resumption and protected import, followed by normal repository validation. It does not yet prove an unattended contributor on another machine, internet-facing deployment availability, or autonomous owner integration all the way to GitHub. The qualification harness coordinated the donor and drove review dispatch; local integration and full CI were performed by the development agent.
 
-Next concrete publication step: open the reviewed Updex change as a draft PR after Brian authorizes that action. A live public queue still needs its deployment address and deliberate production configuration; this pilot does not silently expose all Frostyard work. Queue editing/top-up and event-driven owner recovery remain on the existing roadmap.
+Publication completed after Brian authorized it: draft PR #417 targets Frostyard main from `bketelsen:adc/updex-contribution-examples`. A final rubric check identified the coverage-ratchet requirement: the parse-error example exercises one previously uncovered statement, so `.coverage-baseline` was raised from 86.2% to the observed 86.4%. This required integration metadata change is commit `ce95cb0`, following the independently reviewed example commit. Full `make ci` passed again with the higher baseline (`/tmp/adc-updex-pr-ci.log`); GitHub checks are tracked on the PR. A live public queue still needs its deployment address and deliberate production configuration; this pilot does not silently expose all Frostyard work. Queue editing/top-up and event-driven owner recovery remain on the existing roadmap.
