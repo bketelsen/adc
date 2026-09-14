@@ -143,6 +143,10 @@ func (s *Store) Get(id string, v any) error {
 	}
 	allowed := false
 	switch v.(type) {
+	case *PublicIntentObservation:
+		allowed = kind == "public-intent-observation"
+	case *AreaNote:
+		allowed = kind == "area-note" || kind == "area-note-history"
 	case *Area:
 		allowed = kind == "area" || kind == "area-history"
 	case *Obligation:

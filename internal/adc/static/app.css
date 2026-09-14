@@ -100,3 +100,11 @@ html[data-theme=dark]{color-scheme:dark;--bg:#171e2a;--surface:#202938;--surface
 .decision-actions button:not(.primary){padding:10px 14px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}.decision-actions button:not(.primary):hover{background:var(--surface-2)}.decision-notes>label{margin-top:12px}.decision-actions{background:var(--surface);padding:6px 0}
 
 #decisionlist>.decision{display:flex;flex-direction:column;max-height:calc(65dvh - 24px)}.decision-body{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:4px}#decisionlist>.decision>form{flex-shrink:0;margin-top:12px}.decision-body>.eyebrow{margin-top:0}
+
+/* Ownership detail stays quiet until opened, with visible disclosure controls. */
+.area-panel>details{border-top:1px solid var(--line);margin-top:10px;padding-top:3px}
+.area-panel details>summary{padding:10px 26px 10px 0;position:relative}
+.area-panel details>summary::after{content:'+';position:absolute;right:5px;color:var(--muted)}
+.area-panel details[open]>summary::after{content:'−'}
+.area-panel details article{border-top:1px solid var(--line);padding-top:16px;margin-top:12px}
+.area-panel>h3{margin-top:24px}

@@ -149,6 +149,7 @@ func (e *Engine) tick(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e.dispatchObligations(time.Now().UTC())
+	e.boundDiscovery()
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
 	e.releaseRunResources()
@@ -251,6 +252,9 @@ func (e *Engine) tick(ctx context.Context) {
 			}
 			var t Assignment
 			if s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
+				continue
+			}
+			if !e.attentionCapacity(t) {
 				continue
 			}
 			a, accountErr := s.runAccount(t, r)

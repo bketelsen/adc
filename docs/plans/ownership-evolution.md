@@ -1,6 +1,6 @@
 # ADC evolution plan: continuing ownership
 
-**Status:** Approved by Brian; implementation in progress. P0 and P1 are complete; P1 is deployed and P2 is in progress. See [ownership checkpoint](ownership-checkpoint.md) for current evidence and rollout state.
+**Status:** Approved by Brian; implementation in progress. P0–P2 are complete; P2 is deployed and P3 is in progress. See [ownership checkpoint](ownership-checkpoint.md) for current evidence and rollout state.
 
 **Product authority:** [ADC Desired State](../design/desired-state.md), produced from the September 13, 2026 ownership discussion and subsequently reviewed by Brian. That document defines the destination. This plan describes an incremental route from existing ADC without freezing storage schemas, tool names, transports, or prompts prematurely.
 

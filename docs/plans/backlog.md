@@ -2,7 +2,7 @@
 
 ## Continuing ownership — approved, in progress
 
-Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 baseline/coexistence investigation is complete; P1 owner knowledge and timed follow-up obligations are implemented locally and undergoing qualification. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
+Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 and P1 are complete; owner knowledge and timed follow-up obligations are deployed. P2 maintained knowledge, selected-passage correction and bounded discovery are deployed. P3 permanent-owner coordination is next. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
 
 ## Active repair queue — 2026-09-13
 

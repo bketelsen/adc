@@ -169,8 +169,10 @@ func TestOwnerAreaConcurrencyAndHumanIntentBoundary(t *testing.T) {
 	p := ownerNoteInput{Area: a.ID, Revision: a.Revision, Summary: "Agent observation, uncertain until checked", Source: "fixture://source"}
 	_, err := call(t, e, r, "adc_remember", p)
 	must(t, err)
-	if _, err = call(t, e, r, "adc_remember", p); err == nil {
-		t.Fatal("stale update overwrote knowledge")
+	result, err := call(t, e, r, "adc_remember", p)
+	must(t, err)
+	if !strings.Contains(result, "conflict") {
+		t.Fatal("stale update not retained for reconciliation")
 	}
 	must(t, s.Get(a.ID, &a))
 	if a.Intent != "Verify agreed outcomes. Do not invent new work." || !strings.HasPrefix(a.UpdatedBy, "run:") {

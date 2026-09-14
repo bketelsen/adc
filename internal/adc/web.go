@@ -28,6 +28,7 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	AreaKnowledge                                               []AreaKnowledge
 	Areas                                                       []Area
 	Obligations                                                 []Obligation
 	Connection                                                  ConnectionPage
@@ -270,6 +271,22 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	case "/areas":
 		p.View, p.Title = "areas", "Areas of responsibility"
 		p.Areas = list[Area](w.Store, "area", orgID)
+		for _, a := range p.Areas {
+			k := w.Store.areaKnowledge(a)
+			records, _ := w.Store.Records("area-history", a.Org)
+			for _, record := range records {
+				if record.Parent == a.ID {
+					var old Area
+					if w.Store.Get(record.ID, &old) == nil {
+						k.History = append(k.History, old)
+					}
+				}
+			}
+			if len(k.History) > 12 {
+				k.History = k.History[:12]
+			}
+			p.AreaKnowledge = append(p.AreaKnowledge, k)
+		}
 		p.Obligations = list[Obligation](w.Store, "obligation", orgID)
 	case "/live-work":
 		w.liveWork(rw, r, p)
@@ -695,6 +712,12 @@ func (w *Web) action(r *http.Request, p Page) error {
 			case "resume":
 				if t.State != "paused" {
 					return errors.New("Only a paused assignment can be resumed")
+				}
+				if !w.Engine.attentionCapacity(t) {
+					return errors.New("This attention task spent its shared budget; reassess its scope before starting further work")
+				}
+				if reason := s.obligationRunProblem(t); reason != "" {
+					return errors.New(reason + "; reassess the retained obligation before resuming")
 				}
 				t.State = "queued"
 				return s.Put("assignment", t.Org, "", t.State, t.ID, t)

@@ -16,6 +16,10 @@ func TestBrowserOwnership(t *testing.T) {
 	s, e, _, r, a := ownershipFixture(t)
 	_, err := s.db.Exec("INSERT INTO sessions VALUES(?, 'owner','2099-01-01T00:00:00Z')", digest("transcript-fixture"))
 	must(t, err)
+	a.Summary = "Observed Monday collection, awaiting human confirmation."
+	a.Source = "fixture://initial"
+	a, err = s.saveArea(a, a.Revision, "run:"+r.ID)
+	must(t, err)
 	o := createFollowup(t, e, r, followupArgs(a))
 	server := httptest.NewServer(NewWeb(s, e, false).Handler())
 	defer server.Close()
@@ -29,6 +33,16 @@ func TestBrowserOwnership(t *testing.T) {
 		t.Fatal("browser did not cancel obligation")
 	}
 	must(t, s.Get(a.ID, &a))
+	notes := s.areaKnowledge(a).Notes
+	found := false
+	for _, n := range notes {
+		if n.Text == "Tuesday is correct. Please retain that correction." && n.Selection == "Observed Monday collection, awaiting human confirmation." {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("selected correction not retained")
+	}
 	if a.Intent != "Keep the family responsibility current." {
 		t.Fatal("browser intent correction not saved")
 	}

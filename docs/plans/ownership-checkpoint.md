@@ -20,6 +20,16 @@ Independent Claude review passed after corrections. Findings fixed: credential s
 
 Consistent pre-rollout backup: `.adc/backups/before-ownership-20260914T021750Z.db` (0600); baseline metadata: ignored `work/ownership-before-deploy.json`. The new records are additive, but older binaries cannot safely execute active follow-up assignments without reconciliation.
 
+## P2 qualification and deployment
+
+P2 maintained knowledge, selected-revision discussion/correction, explicit history retrieval, observed/inferred understanding, and bounded discovery are deployed. Public intent preview includes only human-selected text. A linked public source can be checked by the owner; the stored agent-reported fingerprint exposes drift without importing external prose into intent. Public publication remains on the existing reviewed/authorized path; cadence-based refresh is later work.
+
+`make verify` passed (40.974-second race suite, vet/build). Browser qualification passed with selected-passage correction and phone layout. The dormant-experiment live fixture passed in 72.03 seconds with Sol/Opus, retained the correction and proposed no maintenance. Real-source onboarding pilots for TrueNAS MCP and Snosi passed in isolated databases (188.07 seconds total). They used real README snapshots and explicitly retained unknown live state. The NAS pilot recovered one benign `adc_wait` race; the product pilot had no failed tools. Logs are `/tmp/adc-knowledge-source-pilots.log`, `/tmp/adc-knowledge-live.log`, `/tmp/adc-knowledge-browser-release.log`, `/tmp/adc-knowledge-verify-deploy.log`.
+
+Independent Claude review passed after fixing exhausted-budget resume, late capacity checking, pending-note prioritization and count, and the human-brief newline. Final review of public-source drift passed; its low-severity suggestions were also addressed with regressions: retain a deferred drift-notification flag when the note queue is full, and label observations stale after the human changes expected public text/source. Report: ignored `work/knowledge-independent-review.json`; log `/tmp/adc-knowledge-audit-final.log`.
+
+Pre-rollout consistent backup: `.adc/backups/before-knowledge-20260914T024947Z.db`; baseline in `work/knowledge-before-deploy.json`. There were no active provider runs. All 191 baseline tracked records retained IDs/parents/states after rollout; login responds. No production areas or schedules were populated with qualification data. Existing missing-`dig` preflight remains unchanged.
+
 ## Next bounded action
 
-Continue P2 maintained knowledge/onboarding and then P3 owner-addressed communication. Keep the qualified P1 service running while developing and testing later slices separately. Do not restart the product interview or replace the execution engine. Do not turn the existing runtime prerequisite wait into a completed result.
+Continue P3 permanent-owner coordination, then bounded attention and the supervisor briefing. See [coordination seam](../design/owner-coordination.md). Existing P2 server stays running during development. A discovery subscription is not implicit authorization for unfunded background work. Keep pending dependencies visible, preserve receiving authority, and do not restart the product interview.
