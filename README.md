@@ -84,3 +84,7 @@ Embedded Datastar JavaScript is version 1.0.2; its license is preserved in [docs
 ## License
 
 MIT — see [LICENSE](LICENSE). Third-party components retain their own licenses.
+
+### Development service lifetime
+
+`make start` builds and starts ADC as the transient `adc-development` systemd user service. It remains running when the launching terminal or Codex session ends. Use `make status`, `make logs`, and `make stop`; after an update, `make stop && make start`. `make serve` still runs the existing binary in the foreground, and `make run` verifies it first. All read the same `Makefile.local` settings. Do not run both modes on the same address. The transient service does not install reboot autostart; use the deployment guide for that.

@@ -94,3 +94,48 @@ print("bounded-processes",len(children))'`})
 		t.Fatal(r)
 	}
 }
+
+func TestContributionRuntimeIsolation(t *testing.T) {
+	source := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(source, "public"), []byte("curated"), 0400))
+	id, err := ContributionRuntimeID(t.Context(), source)
+	must(t, err)
+	t.Setenv("ADC_CONTRIBUTION_RUNTIME", source)
+	t.Setenv("ADC_CONTRIBUTION_RUNTIME_ID", id)
+	t.Setenv("SYNTHETIC_SECRET", "not-public")
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer server.Close()
+	command := fmt.Sprintf(`set -eu
+ test "$(cat /runtime/public)" = curated
+ ! touch /runtime/injected
+ test -z "${SYNTHETIC_SECRET-}"
+ test ! -e %q
+ test ! -e /run/user
+ test "$GOPROXY" = off
+ ! curl -fsS --max-time 1 %q
+ echo isolated-runtime`, source, server.URL)
+	result, err := (contributionExecutor{Runtime: id}).Execute(t.Context(), map[string]string{"public": "source"}, workspaceCommand{Command: command})
+	must(t, err)
+	if result.ExitCode != 0 || hits.Load() != 0 {
+		t.Fatalf("%+v hits=%d", result, hits.Load())
+	}
+}
+
+func TestLiveUpdexRuntime(t *testing.T) {
+	if os.Getenv("ADC_UPDEX_RUNTIME_CHECK") != "1" {
+		t.Skip("set ADC_UPDEX_RUNTIME_CHECK and ADC_UPDEX_SOURCE")
+	}
+	files := map[string]string{}
+	for _, name := range []string{"go.mod", "go.sum", "version/pattern.go", "version/pattern_test.go"} {
+		body, err := os.ReadFile(filepath.Join(os.Getenv("ADC_UPDEX_SOURCE"), name))
+		must(t, err)
+		files[name] = string(body)
+	}
+	result, err := (contributionExecutor{Runtime: os.Getenv("ADC_CONTRIBUTION_RUNTIME_ID")}).Execute(t.Context(), files, workspaceCommand{Command: "go version && go test ./version && go vet ./version", TimeoutSeconds: 120})
+	must(t, err)
+	t.Log(result.Output)
+	if result.ExitCode != 0 {
+		t.Fatal(result.ExitCode)
+	}
+}

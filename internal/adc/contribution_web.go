@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -159,6 +160,7 @@ func (w *Web) publicContributions(rw http.ResponseWriter, r *http.Request) {
 
 type ContributionPage struct {
 	Enabled bool
+	Runtime string
 	Queues  []ContributionQueue
 	Packets []ContributionPacket
 	Results []Contribution
@@ -167,7 +169,7 @@ type ContributionPage struct {
 
 func (w *Web) contributionPage(p *Page) {
 	p.View, p.Title = "contributions", "Contributed work"
-	p.Contributions = ContributionPage{Enabled: w.PublicContributions, Queues: list[ContributionQueue](w.Store, "contribution-queue", p.Org.ID), Packets: list[ContributionPacket](w.Store, "contribution-packet", p.Org.ID), Results: list[Contribution](w.Store, "contribution", p.Org.ID)}
+	p.Contributions = ContributionPage{Enabled: w.PublicContributions, Runtime: os.Getenv("ADC_CONTRIBUTION_RUNTIME_ID"), Queues: list[ContributionQueue](w.Store, "contribution-queue", p.Org.ID), Packets: list[ContributionPacket](w.Store, "contribution-packet", p.Org.ID), Results: list[Contribution](w.Store, "contribution", p.Org.ID)}
 	if len(p.Contributions.Packets) > 30 {
 		p.Contributions.Packets = p.Contributions.Packets[:30]
 		p.Contributions.More = true
@@ -216,6 +218,10 @@ func (w *Web) contributionAction(r *http.Request, p Page) error {
 		return fmt.Errorf("choose 1–20 internal evaluations")
 	}
 	q := ContributionQueue{ID: ID(), Org: p.Org.ID, Area: area.ID, Owner: area.Owner, Creator: p.User.ID, Account: account.ID, Reviewer: reviewer.ID, Provider: providerName(reviewer.Provider), Model: reviewer.Model, Scope: r.FormValue("scope"), Source: r.FormValue("source"), State: "active", MaxReviews: max, MaxPackets: 20, Created: now()}
+	q.Runtime = r.FormValue("runtime")
+	if !contributionRuntimeAvailable(q.Runtime) {
+		return fmt.Errorf("choose the installed admission runtime or basic tools")
+	}
 	if !boundedText(q.Scope, 3000) || !publicSource(q.Source) || r.FormValue("disclosure") != "yes" {
 		return fmt.Errorf("approve a specific public scope and credential-free HTTPS source")
 	}

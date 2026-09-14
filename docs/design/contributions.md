@@ -4,7 +4,7 @@ P6 restores outside help without making outside agents members of the organizati
 
 ## Public scope and accountable ownership
 
-A human prepares a queue at `/contributions`: responsible area, deliberately public scope, public HTTPS source, an internal reviewer, one subscription from that human's portfolio and a total evaluation budget. The reviewer must be from a different model family than the permanent owner. Up to eight queues per organization are supported initially. A queue cannot silently change its source, owner or funding; pausing revokes it. Editing/top-up and archived queue management remain follow-through.
+A human prepares a queue at `/contributions`: responsible area, deliberately public scope, public HTTPS source, an internal reviewer, one subscription from that human's portfolio and a total evaluation budget. The reviewer must be from a different model family than the permanent owner. Up to eight queues per organization are supported initially. Queues also pin an optional installation-provided validation runtime. A queue cannot silently change its source, owner, runtime or funding; pausing revokes it. Editing/top-up and archived queue management remain follow-through.
 
 The owner uses `adc_offer_contribution` from protected work to supply explicitly public outcome, criteria, source revision and files. This is a deliberate disclosure under the approved scope, not an export of the private assignment or owner memory. Known configured secrets are screened. The source URL and revision are owner assertions; ADC hashes the actual offered bytes but does not prove those bytes came from that public URL. Scope compliance and semantic confidentiality still depend on the authorized owner. No complete secret detector or automatic source-attestation claim is made.
 
@@ -23,13 +23,25 @@ Candidate commands run in a separate Linux profile, not the ordinary outbound-en
 - A systemd user service bounds aggregate memory (512 MiB, no swap), processes (64), CPU (one core) and elapsed time. Cancellation stops the whole service cgroup.
 - Bubblewrap removes network access, host homes, ADC state, sockets, environment secrets and other workspaces. `/usr` is read-only; `/proc` is namespaced. Nested user namespaces are disabled.
 - A read-only supplied source is copied into a disposable workspace for each command. Workspace and temporary/home filesystems have size limits. Generated hooks, poisoned homes and child processes cannot persist into the next command.
-- No dependencies are downloaded during validation. The initial runtime has distribution tools such as Python and Git. A candidate requiring unavailable dependencies must be rejected/blocked for internal handling; no advisory fallback exists.
+- No dependencies are downloaded during validation. Basic queues have distribution tools such as Python and Git. An optional curated Go runtime supplies a compiler and explicitly selected public modules, mounted read-only after its contents are verified against the queue pin. Unavailable dependencies do not enable network access or an advisory fallback.
 
 This requires Linux, bubblewrap and a functioning systemd user manager with resource controllers. Installations in Incus must qualify that environment before enabling intake. This is process/namespace isolation with a shared host kernel, not a separate VM or a claim of protection against kernel vulnerabilities. Ordinary protected work retains its separately documented outbound network behavior.
 
 Text sources have at most 256 files; each file is at most 1 MiB, total source at most 4 MiB, and the offered public JSON packet at most 1 MiB. Candidate changes are at most 1 MiB; the combined import payload must fit 2 MiB. Paths cannot traverse, overlap files/directories, contain Git metadata or create symlinks. No archive extraction, submitted fetch URL, executable file mode or Git filter configuration is accepted.
 
 After admission, `adc_import_contribution` materializes a fresh source directory inside the accountable owner's protected workspace. It neither overwrites a checkout nor executes candidate programs. The owner still owes integration against current ground truth, normal code/artifact review and authorized delivery. Admission never changes original-task completion, human intent, support status, Git merge or publication authority. Reviewed code is not a mathematical guarantee of benign behavior; subsequent work stays under its existing execution and approval policy.
+
+## Curated Go runtime
+
+An installation may prepare a directory containing `go/` (the chosen Go distribution) and `mod/` (only the public modules needed by its work). Do not point this at a home directory, ADC data directory, or an entire developer module cache: every byte in this tree is readable by candidate programs. Include the distributions' licenses. Symlinks and special files are rejected; a runtime is bounded to 40,000 entries and 1 GiB.
+
+Run `./bin/adc contribution-runtime -source /absolute/curated-runtime` to validate and print its content digest. Set `ADC_CONTRIBUTION_RUNTIME` to that directory and `ADC_CONTRIBUTION_RUNTIME_ID` to the returned digest in the service environment (or `Makefile.local`). The queue form offers the installed runtime; choosing it pins the digest into the public packet. Existing basic queues retain basic tools. Withdrawing the configured ID or directory disables intake for affected queues before another evaluation can be reserved.
+
+Every validation command copies and hashes the actual runtime bytes into a private temporary snapshot before mounting it read-only at `/runtime`. Content drift fails closed. Cheap intake checks compare configured identity and directory availability; they do not repeatedly hash the tree for anonymous requests. An in-place content change can therefore be detected later at validation, so administrators should provision a new runtime and new queue rather than mutate an active runtime.
+
+Go uses an ephemeral cache, `GOPROXY=off`, `GOSUMDB=off`, `GOTOOLCHAIN=local`, and no ambient Go configuration/workspace. This profile raises memory to 1 GiB and `/tmp` to 256 MiB, retaining the 256 MiB workspace, 64-process cap, one-core CPU bound and 120-second command maximum. Dependencies must be curated and verified by the installation before use; disabling online checksum lookup inside the sandbox is not a claim that arbitrary cached modules are trusted. The queue/runtime identity is a content pin, not a signature or a proof of safe tools.
+
+The Updex pilot uses Go 1.26.7 and `github.com/hashicorp/go-version v1.9.0`. Its package-only admission does not stand in for the repository's full CI gate at integration.
 
 ## HTTP protocol, version 1
 

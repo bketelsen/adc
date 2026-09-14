@@ -17,9 +17,9 @@ import (
 // Candidate programs get no network, persistent HOME, ADC tools or host worktree.
 // systemd supplies aggregate memory/process limits; bubblewrap supplies mounts
 // and namespaces. A missing user manager or isolation primitive is a hard error.
-type contributionExecutor struct{}
+type contributionExecutor struct{ Runtime string }
 
-func (contributionExecutor) Execute(ctx context.Context, files map[string]string, in workspaceCommand) (workspaceResult, error) {
+func (executor contributionExecutor) Execute(ctx context.Context, files map[string]string, in workspaceCommand) (workspaceResult, error) {
 	if err := validateContributionFiles(files); err != nil {
 		return workspaceResult{}, err
 	}
@@ -51,6 +51,11 @@ func (contributionExecutor) Execute(ctx context.Context, files map[string]string
 			return workspaceResult{}, err
 		}
 	}
+	runtimeDir, cleanup, err := snapshotContributionRuntime(ctx, executor.Runtime)
+	if err != nil {
+		return workspaceResult{}, err
+	}
+	defer cleanup()
 	unit := "adc-contribution-" + ID()
 	// The service cannot outlive its call. Stop the entire cgroup before deleting
 	// source, even if the IPC client disconnects while the service still runs.
@@ -61,13 +66,24 @@ func (contributionExecutor) Execute(ctx context.Context, files map[string]string
 	}()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(in.TimeoutSeconds+10)*time.Second)
 	defer cancel()
+	memory, temporary := "MemoryMax=512M", "16777216"
+	if runtimeDir != "" {
+		memory, temporary = "MemoryMax=1G", "268435456"
+	}
 	args := []string{"--user", "--quiet", "--wait", "--pipe", "--collect", "--unit=" + unit, "--service-type=exec",
-		"-p", "CPUQuota=100%", "-p", "MemoryMax=512M", "-p", "MemorySwapMax=0", "-p", "TasksMax=64", "-p", fmt.Sprintf("RuntimeMaxSec=%d", in.TimeoutSeconds), "-p", "LimitCORE=0", "-p", "NoNewPrivileges=yes", "-p", "KillMode=control-group",
+		"-p", "CPUQuota=100%", "-p", memory, "-p", "MemorySwapMax=0", "-p", "TasksMax=64", "-p", fmt.Sprintf("RuntimeMaxSec=%d", in.TimeoutSeconds), "-p", "LimitCORE=0", "-p", "NoNewPrivileges=yes", "-p", "KillMode=control-group",
 		"/usr/bin/bwrap", "--unshare-all", "--unshare-user", "--disable-userns", "--cap-drop", "ALL", "--new-session", "--die-with-parent",
 		"--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/sbin", "/sbin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
-		"--proc", "/proc", "--dev", "/dev", "--dir", "/etc", "--size", "268435456", "--tmpfs", "/workspace", "--size", "16777216", "--tmpfs", "/tmp", "--dir", "/home", "--size", "16777216", "--tmpfs", "/home/worker",
+		"--proc", "/proc", "--dev", "/dev", "--dir", "/etc", "--size", "268435456", "--tmpfs", "/workspace", "--size", temporary, "--tmpfs", "/tmp", "--dir", "/home", "--size", "16777216", "--tmpfs", "/home/worker",
 		"--ro-bind", source, "/source", "--clearenv", "--setenv", "HOME", "/home/worker", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "LANG", "C.UTF-8", "--setenv", "TMPDIR", "/tmp", "--setenv", "GIT_CONFIG_NOSYSTEM", "1", "--setenv", "GIT_TERMINAL_PROMPT", "0",
-		"--chdir", "/workspace", "/usr/bin/bash", "--noprofile", "--norc", "-c", `cp -r /source/. /workspace/ && exec /usr/bin/bash --noprofile --norc -c "$1"`, "adc-contribution", in.Command}
+	}
+	if runtimeDir != "" {
+		args = append(args, "--ro-bind", runtimeDir, "/runtime")
+		for _, pair := range [][2]string{{"PATH", "/runtime/go/bin:/usr/bin:/bin"}, {"GOROOT", "/runtime/go"}, {"GOMODCACHE", "/runtime/mod"}, {"GOPROXY", "off"}, {"GOSUMDB", "off"}, {"GOTOOLCHAIN", "local"}, {"GOENV", "off"}, {"GOWORK", "off"}, {"GOCACHE", "/workspace/.gocache"}, {"GOPATH", "/workspace/.gopath"}, {"GOFLAGS", "-p=1"}, {"GOMAXPROCS", "2"}} {
+			args = append(args, "--setenv", pair[0], pair[1])
+		}
+	}
+	args = append(args, "--chdir", "/workspace", "/usr/bin/bash", "--noprofile", "--norc", "-c", `cp -r /source/. /workspace/ && exec /usr/bin/bash --noprofile --norc -c "$1"`, "adc-contribution", in.Command)
 	cmd := exec.CommandContext(ctx, "/usr/bin/systemd-run", args...)
 	// systemd-run needs the invoking user's bus, but none of this environment is
 	// passed through bubblewrap's clearenv to candidate code.

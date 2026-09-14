@@ -95,7 +95,7 @@ func (e *Engine) contributionReviewTools(ctx context.Context, r Run) []copilot.T
 			if err != nil {
 				return workspaceResult{}, err
 			}
-			result, runErr := (contributionExecutor{}).Execute(ctx, files, in)
+			result, runErr := (contributionExecutor{Runtime: p.Public.Runtime}).Execute(ctx, files, in)
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			if _, latest, activeErr := e.admissionContext(r); activeErr == nil && runErr == nil && result.ExitCode == 0 && !result.Truncated {

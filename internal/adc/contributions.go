@@ -12,14 +12,14 @@ import (
 // Queue policy is human-owned. Tokens below are automatically issued claim
 // receipts, never ADC membership, tool access or publication authority.
 type ContributionQueue struct {
-	ClaimTimes                                                                              []string
-	ID, Org, Area, Owner, Creator, Account, Reviewer, Model, Provider, Scope, Source, State string
-	MaxReviews, Spent, Claims, MaxPackets                                                   int
-	Created                                                                                 string
+	ClaimTimes                                                                                       []string
+	ID, Org, Area, Owner, Creator, Account, Reviewer, Model, Provider, Scope, Source, State, Runtime string
+	MaxReviews, Spent, Claims, MaxPackets                                                            int
+	Created                                                                                          string
 }
 type PublicPacket struct {
-	ID, Queue, Title, Outcome, Criteria, Source, SourceRevision, Revision, Kind string
-	Files                                                                       map[string]string
+	ID, Queue, Title, Outcome, Criteria, Source, SourceRevision, Revision, Kind, Runtime string
+	Files                                                                                map[string]string
 }
 type ContributionPacket struct {
 	ClaimTimes                                []string
@@ -56,7 +56,7 @@ func (s *Store) contributionQueueAvailable(q ContributionQueue) bool {
 	var reviewer Agent
 	var owner Agent
 	var member int
-	return q.State == "active" && s.Get(q.Owner, &owner) == nil && CanReview(owner.Model, q.Model) == nil && s.Get(q.Area, &area) == nil && area.Org == q.Org && area.Owner == q.Owner && s.Get(q.Account, &account) == nil && account.User == q.Creator && providerName(account.Provider) == providerName(q.Provider) && s.Get(q.Reviewer, &reviewer) == nil && reviewer.Org == q.Org && reviewer.Model == q.Model && providerName(reviewer.Provider) == providerName(q.Provider) && s.db.QueryRow("SELECT count(*) FROM memberships WHERE user_id=? AND org=?", q.Creator, q.Org).Scan(&member) == nil && member == 1
+	return q.State == "active" && contributionRuntimeAvailable(q.Runtime) && s.Get(q.Owner, &owner) == nil && CanReview(owner.Model, q.Model) == nil && s.Get(q.Area, &area) == nil && area.Org == q.Org && area.Owner == q.Owner && s.Get(q.Account, &account) == nil && account.User == q.Creator && providerName(account.Provider) == providerName(q.Provider) && s.Get(q.Reviewer, &reviewer) == nil && reviewer.Org == q.Org && reviewer.Model == q.Model && providerName(reviewer.Provider) == providerName(q.Provider) && s.db.QueryRow("SELECT count(*) FROM memberships WHERE user_id=? AND org=?", q.Creator, q.Org).Scan(&member) == nil && member == 1
 }
 func (s *Store) offerContribution(r Run, in contributionOffer) (ContributionPacket, error) {
 	var q ContributionQueue
@@ -70,7 +70,7 @@ func (s *Store) offerContribution(r Run, in contributionOffer) (ContributionPack
 	if err := validateContributionFiles(in.Files); err != nil {
 		return ContributionPacket{}, err
 	}
-	pub := PublicPacket{Title: in.Title, Outcome: in.Outcome, Criteria: in.Criteria, Source: q.Source, SourceRevision: in.SourceRevision, Kind: "development", Files: in.Files}
+	pub := PublicPacket{Title: in.Title, Outcome: in.Outcome, Criteria: in.Criteria, Source: q.Source, SourceRevision: in.SourceRevision, Kind: "development", Runtime: q.Runtime, Files: in.Files}
 	raw, _ := json.Marshal(pub)
 	if len(raw) > 1<<20 {
 		return ContributionPacket{}, fmt.Errorf("public packet exceeds 1 MiB encoded JSON")

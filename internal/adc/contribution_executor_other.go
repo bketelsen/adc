@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-type contributionExecutor struct{}
+type contributionExecutor struct{ Runtime string }
 
 func (contributionExecutor) Execute(context.Context, map[string]string, workspaceCommand) (workspaceResult, error) {
 	return workspaceResult{}, fmt.Errorf("contribution execution requires qualified Linux isolation")
