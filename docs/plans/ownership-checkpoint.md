@@ -2,6 +2,8 @@
 
 ## Current state
 
+P0–P5 are deployed. P6 contributed development is qualified and deployed with public intake disabled. The detailed chronological evidence below preserves earlier checkpoints; the final section names the current next action.
+
 - Approved direction: [plan](ownership-evolution.md), [desired state](../design/desired-state.md).
 - Baseline: `7a3e951`; existing identities and approval states preserved.
 - P0 complete: reuse permanent Agent identity; add explicit areas; do not reinterpret Assignment.Owner or existing schedule overlap rules; preserve approval and review semantics.
@@ -81,3 +83,25 @@ Deployment: consistent backup `.adc/backups/before-completion-policy-20260914T04
 ## Next bounded action after P5
 
 P6: inspect Bluefin/Snowcat reference flows, then implement deliberately public work packets and controlled contribution admission with demonstrated hostile-input isolation before enabling anonymous intake. Public exposure and any production eligibility/funding policy need a concrete reviewed configuration; do not infer that all organization work is public. Begin with the already approved development contribution shape; external reviews still require internally owned admission, and supervision/ownership/coordination are never contributed roles. P7 federation remains afterward. Ordinary source implementation remains authorized without another continue prompt.
+
+
+## P6 contributed development — deployed, public intake disabled
+
+The first contributed-development path has human-approved public queue policy, permanent-owner offers, explicit public text-source packets, anonymous HTTP claims with automatic receipts, bounded submission/replay handling and internally owned admission. The reviewer receives only the public packet/candidate and two tools. Candidate commands use a distinct offline bubblewrap/systemd profile with aggregate CPU/memory/process/time limits and disposable filesystems. Protected owners may import admitted source into a fresh directory; normal integration, code review and publication authority remain required. Source URL/revision assertions and semantic disclosure remain the authorized owner's responsibility, not a proved source-attestation boundary. See [the protocol and operating limits](../design/contributions.md).
+
+Owners can wait once for up to an hour, release their slot and resume for results or timeout without human continuation. Received/reviewing contributions survive wait expiry. Queue and packet claim rate limits recover in a rolling hour; release adds a short cooldown. Stopped admission returns responsibility to its owner. Pausing public intake does not prevent importing an already admitted result into an active protected source assignment.
+
+Qualification: final `make verify` passed (47.860-second race suite, vet/build), log `/tmp/adc-contribution-verify-final.log`. Desktop/phone policy approval and CSRF passed; screenshots `work/ui-contribution-{desktop,mobile}.png`, mobile inspected and checkbox/button styling corrected. Final browser log `/tmp/adc-contribution-browser-final.log`. Deterministic coverage includes atomic claim races, replay budget, SQLite restart/no duplicate review, revocation, durable owner wakeup, expired waits during active admission, fractional expiry, bounded resource exhaustion, no ordinary tools in admission, guarded imports and no original-task completion/publication change.
+
+Real unaffiliated Sol contribution and internal Opus admission passed in 31.66 seconds with zero failed ADC tools: an external false PASS with prompt-injection/exfiltration instructions was independently rejected on observed failing criteria; a correct candidate was independently tested and admitted. HTTP claim, submission and receipt-bound outcome used no ADC membership or manually issued credential. It is a labeled synthetic calculator fixture, not production repository validation. Log `/tmp/adc-contribution-live.log`.
+
+The first independent audit timed out after excessive source browsing and produced no verdict. The source packet was tightened; the next audit found five concrete recovery/input defects (139.73 seconds), all corrected with regressions. Independent focused re-review then passed (43.74 seconds), report `work/contribution-independent-review.json`, log `/tmp/adc-contribution-audit-corrections.log`. It confirmed the internal tool/context isolation and the corrections; it did not claim proof against kernel vulnerabilities or semantic source disclosure errors.
+
+The default listener returns 404 for public routes. `make serve ADC_PUBLIC_CONTRIBUTIONS=true` explicitly enables them only when a real queue scope/source and review funding have been chosen. No production public queue, disclosure, external submission, infrastructure mutation or donated work was created by qualification. A production pilot needs Brian's choice of public source and finite internal review budget. P7 federation remains after this milestone. Queue edit/top-up/archive, broader dependency images, binary artifacts, optional external review contributions, source attestation and a packaged contributor client remain follow-through.
+
+
+P6 rollout: consistent backup `.adc/backups/before-contributions-20260914T045837Z.db` (0600), baseline `work/contribution-before-deploy.json`. No provider run was active. Restarted through `make serve` with `-public-contributions=false`; all 191 assignment/run/decision/execution-plan records retain identical IDs/kinds/parents/states. Login returns 200, public queue requests return 404. The replacement TrueNAS schedule remains active for 2026-09-14T13:00:00Z. The unrelated missing-`dig` preflight remains unchanged. No production contribution policy exists. Before a downgrade, disable intake and pause/reconcile any new admission runs; do not let an older binary execute the new task kind.
+
+## Current next action
+
+Choose the first deliberately public source and finite internally funded admission budget for a real contribution pilot. The workflow and configuration form are ready; no blanket permission to expose internal tasks has been inferred. Once that policy is selected, prepare one bounded public work packet under it and qualify the actual deployment address/runtime before enabling intake. P7 supervisor-only federation remains the next implementation phase; its pairing/disclosure policy is separate from anonymous contributed work.

@@ -2,12 +2,19 @@
 
 ## Continuing ownership — approved, in progress
 
-Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 and P1 are complete; owner knowledge and timed follow-up obligations are deployed. P2 maintained knowledge, selected-passage correction and bounded discovery are deployed. The first P3 permanent-owner coordination queue is deployed; P4 bounded attention and briefing is next. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
+Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 and P1 are complete; owner knowledge and timed follow-up obligations are deployed. P2 maintained knowledge, selected-passage correction and bounded discovery are deployed. The first P3 permanent-owner coordination queue, P4 bounded attention/supervisor briefing and P5 completion policy snapshots are deployed. P6 contributed development is qualified and deployed; public intake remains disabled pending an explicit pilot scope and funding policy. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
 
 ### Ownership qualification follow-through
 
-- Permanent owner requests retain evidence across assignments and restart; the first P3 queue is deployed. They do not yet fund background activations when no eligible receiving context exists. P4 must make that funding deliberate and bring outstanding ownership into a supervisor briefing.
+- Permanent owner requests retain evidence across assignments and restart; the first P3 queue is deployed. They do not yet fund background activations when no eligible receiving context exists. P4 now provides approved bounded assessment funding and a supervisor briefing. Event-driven attention and recovery for every unrelated historical blocker remain follow-through.
 - Real recovery qualification exposed ordinary workflow affordance friction: candidate-review tools visible outside planned steps, waiting after a fast child already completed, and reviewer delegation before the author finishes. Recovery succeeded without human continuation. Refine tool availability and completion/review guidance in P5; preserve real review gates rather than bypassing them.
+
+### Contribution follow-through
+
+- P6's first intake supports public text-source development packets, automatic HTTP claim receipts and internally owned offline admission. Broader dependency/toolchain images, cryptographic public-source attestation, binary artifacts, optional contributed reviews, a packaged donor client and reputation remain deferred.
+- Public-queue policies currently have finite lifetime budgets and pause controls. Add revisioned edit/top-up, resume, archive and deeper pagination before sustained public use; preserve prior funding authority and spent evidence rather than resetting counters.
+- Keep production anonymous intake disabled until its first real public scope/source and human funding portfolio are chosen. Qualified local fixtures are not permission to expose private ADC tasks or infrastructure.
+
 
 ## Active repair queue — 2026-09-13
 

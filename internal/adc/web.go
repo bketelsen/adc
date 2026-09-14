@@ -28,6 +28,7 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Contributions                                               ContributionPage
 	Assessments                                                 []AssessmentEntry
 	AttentionBriefs                                             []BriefEntry
 	OwnershipBriefing                                           OwnershipBriefing
@@ -81,10 +82,11 @@ type Page struct {
 	Setup                                                       bool
 }
 type Web struct {
-	Store     *Store
-	Engine    *Engine
-	templates *template.Template
-	Secure    bool
+	PublicContributions bool
+	Store               *Store
+	Engine              *Engine
+	templates           *template.Template
+	Secure              bool
 }
 
 func NewWeb(s *Store, e *Engine, secure bool) *Web {
@@ -126,12 +128,13 @@ func NewWeb(s *Store, e *Engine, secure bool) *Web {
 		}
 		return id
 	}, "family": Family}
-	return &Web{s, e, template.Must(template.New("app").Funcs(f).ParseFS(assets, "templates/*.html")), secure}
+	return &Web{Store: s, Engine: e, templates: template.Must(template.New("app").Funcs(f).ParseFS(assets, "templates/*.html")), Secure: secure}
 }
 func (w *Web) Handler() http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(assets, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	mux.HandleFunc("/public/", w.publicContributions)
 	mux.HandleFunc("/", w.route)
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("X-Content-Type-Options", "nosniff")
@@ -274,6 +277,8 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/":
 		p.OwnershipBriefing = w.Engine.ownershipBriefing(p.Org.ID)
+	case "/contributions":
+		w.contributionPage(&p)
 	case "/coordination":
 		w.ownerRequestPage(r, &p)
 	case "/areas":
@@ -579,6 +584,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 	defer s.mu.Unlock()
 	f := r.FormValue
 	switch r.URL.Path {
+	case "/contribution-action":
+		return w.contributionAction(r, p)
 	case "/owner-request-action":
 		return w.ownerRequestAction(r, p)
 	case "/area-action":

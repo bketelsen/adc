@@ -110,7 +110,7 @@ func runIndependentCodeAudit(t *testing.T, files []string, prompt, output string
 	}()
 
 	turn := map[string]any{"threadId": start.Thread.ID, "input": []map[string]string{{"type": "text", "text": prompt}}}
-	if output == "waits-independent-review.json" || output == "integration-independent-review.json" || output == "operations-independent-review.json" || output == "github-independent-review.json" || output == "preflight-independent-review.json" || output == "selfhosted-independent-review.json" {
+	if output == "contribution-independent-review.json" || output == "waits-independent-review.json" || output == "integration-independent-review.json" || output == "operations-independent-review.json" || output == "github-independent-review.json" || output == "preflight-independent-review.json" || output == "selfhosted-independent-review.json" {
 		turn["effort"] = "medium"
 	}
 	must(t, client.Call(ctx, "turn/start", turn, nil))

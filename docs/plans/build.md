@@ -1,6 +1,6 @@
 # Aide de Camp — proposed build plan
 
-Status: BUILD APPROVED by Brian, with a comfortable, clean, deliberately designed UI and explicitly no generic ivory-and-green styling. The filesystem permission blocker has been resolved. Initial application code is implemented in `/var/home/bjk/projects/adc`, and the development service is responding at http://127.0.0.1:8789/. Implementation and qualification remain in progress; the roadmap below is not a claim that every phase is complete. See `adc-build-handoff.md` in the original task outputs for the current checkpoint.
+Status: BUILD APPROVED by Brian, with a comfortable, clean, deliberately designed UI and explicitly no generic ivory-and-green styling. The filesystem permission blocker has been resolved. Initial application code is implemented in `/var/home/bjk/projects/adc`, and the development service is responding at http://127.0.0.1:8789/. Implementation and qualification remain in progress; the roadmap below is not a claim that every phase is complete. The original bootstrap handoff is historical. See [the ownership checkpoint](ownership-checkpoint.md) and [current backlog](backlog.md) for implementation and rollout status.
 
 ## Purpose and first proof
 

@@ -143,6 +143,12 @@ func (s *Store) Get(id string, v any) error {
 	}
 	allowed := false
 	switch v.(type) {
+	case *ContributionQueue:
+		allowed = kind == "contribution-queue"
+	case *ContributionPacket:
+		allowed = kind == "contribution-packet"
+	case *Contribution:
+		allowed = kind == "contribution"
 	case *PublicIntentObservation:
 		allowed = kind == "public-intent-observation"
 	case *AreaNote:

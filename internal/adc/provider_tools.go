@@ -14,7 +14,7 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 	tools := e.tools(r, contexts...)
 	var task Assignment
 	_ = e.Store.Get(r.Task, &task)
-	if r.Execution == "protected" && task.Kind != "proposal" {
+	if r.Execution == "protected" && task.Kind != "proposal" && task.Kind != "contribution-review" {
 		ctx := context.Background()
 		if len(contexts) > 0 {
 			ctx = contexts[0]
@@ -37,7 +37,7 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 				if e.Store.Get(r.ID, &current) == nil && current.State != "running" {
 					outcome(inv.ToolCallID)
 				}
-			case "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
+			case "adc_wait_contribution", "adc_admission", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
 				outcome(inv.ToolCallID)
 			}
 			return result, nil

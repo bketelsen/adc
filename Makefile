@@ -5,6 +5,7 @@
 GO ?= go
 GOFMT ?= gofmt
 ADC_ADDR ?= 127.0.0.1:8789
+ADC_PUBLIC_CONTRIBUTIONS ?= false
 ADC_DATA ?= $(CURDIR)/.adc
 COPILOT_CLI_PATH ?= copilot
 ADC_CLAUDE_NODE ?= node
@@ -25,4 +26,4 @@ verify:
 run: verify
 	$(MAKE) serve
 serve:
-	exec env $(SERVER_ENV) ./bin/adc serve -addr "$(ADC_ADDR)" -data "$(ADC_DATA)"
+	exec env $(SERVER_ENV) ./bin/adc serve -addr "$(ADC_ADDR)" -data "$(ADC_DATA)" -public-contributions="$(ADC_PUBLIC_CONTRIBUTIONS)"
