@@ -28,18 +28,19 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 			if err != nil {
 				// A Go handler error is replaced with a generic failure by the CLI.
 				// Return a structured failure so the model can act on the reason.
-				message := redact.Text(err.Error())
+				message := inlineToolText(redact.Text(err.Error()))
 				return copilot.ToolResult{ResultType: "failure", TextResultForLLM: message, Error: message}, nil
 			}
 			switch name {
-			case "adc_wait":
+			case "adc_wait", "adc_wait_contribution":
 				var current Run
 				if e.Store.Get(r.ID, &current) == nil && current.State != "running" {
 					outcome(inv.ToolCallID)
 				}
-			case "adc_wait_contribution", "adc_admission", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
+			case "adc_admission", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
 				outcome(inv.ToolCallID)
 			}
+			result.TextResultForLLM = inlineToolText(result.TextResultForLLM)
 			return result, nil
 		}
 	}

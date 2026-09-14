@@ -1234,8 +1234,8 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					return "", fmt.Errorf("execution plan still has unfinished or unreviewed steps; inspect adc_status and continue or wait")
 				}
 			}
-			if r.Parent == "" && len(r.Code) > 0 {
-				return "", fmt.Errorf("the accountable supervisor must delegate code delivery to an implementation run for independent review")
+			if r.Parent == "" && len(r.Code) > 0 && !e.supervisorCodeHandedOff(r) {
+				return "", fmt.Errorf("delegate finalization of the registered commits to an implementation worker and obtain independent review; every supervisor artifact must match that reviewed handoff")
 			}
 			if err = verifyCode(r); err != nil {
 				return "", err

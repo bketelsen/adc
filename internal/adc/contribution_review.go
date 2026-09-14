@@ -96,6 +96,7 @@ func (e *Engine) contributionReviewTools(ctx context.Context, r Run) []copilot.T
 				return workspaceResult{}, err
 			}
 			result, runErr := (contributionExecutor{Runtime: p.Public.Runtime}).Execute(ctx, files, in)
+			result = inlineWorkspaceResult(result)
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			if _, latest, activeErr := e.admissionContext(r); activeErr == nil && runErr == nil && result.ExitCode == 0 && !result.Truncated {
@@ -142,16 +143,7 @@ func (e *Engine) contributionOwnerTools(r Run) []copilot.Tool {
 		copilot.DefineTool("adc_wait_contribution", "Wait at most one hour for your public packet, releasing this worker slot. ADC resumes you for admission/rejection/blocking or timeout; you then continue internally. Supply Packet.", func(in struct{ Packet string }, _ copilot.ToolInvocation) (string, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			p, _, err := s.publicPacket(in.Packet)
-			var current Run
-			if err != nil || p.Run != r.ID || s.Get(r.ID, &current) != nil || current.State != "running" || p.WaitUntil != "" {
-				return "", fmt.Errorf("packet is unavailable, not yours or already waited; inspect status and continue internally")
-			}
-			p.WaitRun = r.ID
-			p.WaitUntil = time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
-			current.State = "waiting"
-			err = s.Batch(Write{"run", r.Org, r.Task, current.State, r.ID, current}, Write{"contribution-packet", p.Org, p.Task, p.State, p.ID, p})
-			return "Waiting within the one-hour bound; end this turn.", err
+			return e.waitContribution(r, in.Packet, time.Now())
 		}),
 		e.contributionImportTool(r),
 		copilot.DefineTool("adc_offer_contribution", "Offer development under a human-approved public queue owned by your permanent area. Fields are DELIBERATELY PUBLIC: Queue, Title, Outcome, Criteria, SourceRevision and Files (path to UTF-8 text). Supply only the approved public source, never private context. No private tools or credentials go to contributors. You remain responsible when claims expire or review blocks.", func(in contributionOffer, _ copilot.ToolInvocation) (any, error) {
@@ -235,4 +227,37 @@ func (e *Engine) wakeContributors(at time.Time) {
 			}
 		}
 	}
+}
+
+// Rejoining the same wait after steering/recovery is idempotent. Its original
+// deadline is never extended and completed/expired waits never suspend work.
+func (e *Engine) waitContribution(r Run, packet string, at time.Time) (string, error) {
+	s := e.Store
+	p, _, err := s.publicPacket(packet)
+	var current Run
+	if err != nil || p.Run != r.ID || s.Get(r.ID, &current) != nil || (current.State != "running" && current.State != "waiting") || current.Superseded {
+		return "", fmt.Errorf("packet is unavailable or this is not its active owner")
+	}
+	for _, c := range list[Contribution](s, "contribution", p.Org) {
+		if c.Packet == p.ID && (c.State == "admitted" || c.State == "rejected" || c.State == "blocked") {
+			p.WaitRun = ""
+			err := s.Put("contribution-packet", p.Org, p.Task, p.State, p.ID, p)
+			return "Contribution result is available. Inspect adc_contributions and continue integration or recovery; do not wait again.", err
+		}
+	}
+	if p.WaitUntil != "" && !timeAfter(p.WaitUntil, at) {
+		p.WaitRun = ""
+		if p.State == "open" {
+			p.State = "closed"
+		}
+		err := s.Put("contribution-packet", p.Org, p.Task, p.State, p.ID, p)
+		return "The original contribution wait deadline has elapsed. Continue internally within existing scope; do not extend the wait or ask for a routine continuation.", err
+	}
+	if p.WaitUntil == "" {
+		p.WaitUntil = at.Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	}
+	p.WaitRun = r.ID
+	current.State = "waiting"
+	err = s.Batch(Write{"run", r.Org, r.Task, current.State, r.ID, current}, Write{"contribution-packet", p.Org, p.Task, p.State, p.ID, p})
+	return "Waiting within the original one-hour deadline; end this turn. Rejoining after steering does not extend it.", err
 }

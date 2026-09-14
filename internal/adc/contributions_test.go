@@ -283,3 +283,42 @@ func TestContributionClaimLimitsRecoverAndFractionalExpiry(t *testing.T) {
 		t.Fatal("directory path accepted")
 	}
 }
+
+func TestContributionWaitRejoinsWithoutExtendingDeadline(t *testing.T) {
+	s, e, r, p, _ := contributionFixture(t)
+	at := time.Now()
+	_, err := e.waitContribution(r, p.ID, at)
+	must(t, err)
+	must(t, s.Get(p.ID, &p))
+	deadline := p.WaitUntil
+	// Steering can reactivate a waiter before a candidate arrives.
+	setRunning(t, s, &r)
+	_, err = e.waitContribution(r, p.ID, at.Add(time.Minute))
+	must(t, err)
+	must(t, s.Get(p.ID, &p))
+	must(t, s.Get(r.ID, &r))
+	if p.WaitUntil != deadline || r.State != "waiting" {
+		t.Fatal("rejoin failed or bought another hour")
+	}
+	// Reserve a candidate before expiry; expiry must leave its admission alive.
+	c, _ := submitFixture(t, s, p)
+	setRunning(t, s, &r)
+	response, err := e.waitContribution(r, p.ID, at.Add(2*time.Hour))
+	must(t, err)
+	must(t, s.Get(r.ID, &r))
+	must(t, s.Get(p.ID, &p))
+	if r.State != "running" || !strings.Contains(response, "elapsed") || p.WaitRun != "" || p.State != "submitted" {
+		t.Fatal("expired wait suspended owner or cancelled received work")
+	}
+
+	// Terminal admission ends a still-live wait without requiring a failed tool.
+	c.State = "admitted"
+	must(t, s.Put("contribution", c.Org, c.Packet, c.State, c.ID, c))
+	response, err = e.waitContribution(r, p.ID, at.Add(2*time.Minute))
+	must(t, err)
+	must(t, s.Get(r.ID, &r))
+	must(t, s.Get(p.ID, &p))
+	if r.State != "running" || p.WaitRun != "" || !strings.Contains(response, "result is available") {
+		t.Fatal("terminal result re-entered wait")
+	}
+}

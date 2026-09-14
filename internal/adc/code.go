@@ -108,3 +108,38 @@ func verifyCode(r Run) error {
 	}
 	return nil
 }
+
+// A supervisor may retain the artifact it handed to a worker. Completion still
+// requires exact commits adopted by a completed direct worker and a current
+// final review independent of both authors. No evidence or authority is moved.
+func (e *Engine) supervisorCodeHandedOff(root Run) bool {
+	covered := map[string]bool{}
+	reviews := taskReviews(e.Store, root.Task)
+	for _, worker := range taskRuns(e.Store, root.Task) {
+		if worker.Org != root.Org || worker.Parent != root.ID || worker.State != "complete" || worker.Superseded || worker.ReviewOf != "" || worker.Category == "review" || len(worker.Code) == 0 {
+			continue
+		}
+		accepted := false
+		for _, review := range reviews {
+			if review.Stage == "candidate" || review.Target != worker.ID || review.Revision != e.revision(worker) || CanReview(worker.Model, review.Model) != nil {
+				continue
+			}
+			// Match hasCurrentReview's latest applicable verdict semantics. A
+			// newer changes verdict must not fall through to an older PASS.
+			accepted = review.Verdict == "pass" && CanReview(root.Model, review.Model) == nil
+			break
+		}
+		if !accepted || verifyCode(worker) != nil {
+			continue
+		}
+		for _, code := range worker.Code {
+			covered[code.Commit] = true
+		}
+	}
+	for _, code := range root.Code {
+		if code.Commit == "" || !covered[code.Commit] {
+			return false
+		}
+	}
+	return true
+}
