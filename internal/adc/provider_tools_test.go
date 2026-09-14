@@ -18,8 +18,8 @@ func TestProviderErrorsExplainRecoveryAndOnlySuccessfulOutcomesYield(t *testing.
 	}
 	result, err := wait.Handler(copilot.ToolInvocation{ToolCallID: "failed", Arguments: map[string]any{}})
 	must(t, err)
-	if result.ResultType != "failure" || !strings.Contains(result.TextResultForLLM, "no pending children") || yielded != "" {
-		t.Fatal("failure reason lost or failed call yielded")
+	if result.ResultType != "success" || !strings.Contains(result.TextResultForLLM, "No delegated work is pending") || yielded != "" {
+		t.Fatal("already-completed handoff treated as an error or yielded without a state transition")
 	}
 	child := Run{ID: "child", Org: root.Org, Task: root.Task, Parent: root.ID, State: "queued"}
 	must(t, s.Put("run", child.Org, child.Task, child.State, child.ID, child))

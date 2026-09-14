@@ -14,6 +14,7 @@ import (
 // Area identity belongs to a permanent agent, not an execution attempt.
 // Intent is maintained by humans; Summary is explicitly agent-reported.
 type Area struct {
+	CompletionMode                                                    string
 	PublicIntent, PublicSource, UnderstandingKind, ObservedAt         string
 	ID, Org, Owner, Name, Intent, Summary, Source, Updated, UpdatedBy string
 	Revision                                                          int
@@ -92,6 +93,9 @@ func (s *Store) checkOwnershipText(org string, values ...string) error {
 func (s *Store) saveArea(a Area, revision int, human string) (Area, error) {
 	if err := s.checkOwnershipText(a.Org, a.Name, a.Intent, a.Summary, a.Source, a.PublicIntent, a.PublicSource); err != nil {
 		return Area{}, err
+	}
+	if !validCompletionMode(a.CompletionMode) {
+		return Area{}, fmt.Errorf("choose reviewed or routine completion")
 	}
 	if a.ID == "" && len(list[Area](s, "area", a.Org)) >= 32 {
 		return Area{}, fmt.Errorf("initial area limit reached (32 per organization)")
@@ -237,6 +241,8 @@ func (e *Engine) registerFollowup(r Run, p followupInput, at time.Time) (Obligat
 		return Obligation{}, err
 	}
 	template := task
+	policy := completionPolicy(task)
+	template.Completion = &policy
 	template.Attention = nil
 	template.AttentionStarted = ""
 	template.Area = area.ID
@@ -263,7 +269,7 @@ func (e *Engine) registerFollowup(r Run, p followupInput, at time.Time) (Obligat
 		}
 	}
 	template.Title = "Verify: " + p.Outcome
-	template.Prompt = "Perform only the bounded read-only verification below, within the source assignment's existing scope. Do not repeat the original mutation, publish, or expand authority. Delegate the substantive observation and its independent cross-family review using the existing workflow. The observing worker records adc_obligation_result before finishing; finish the assignment only after review. A failed observation leaves the obligation unresolved. Do not manufacture an observation.\nOutcome: " + p.Outcome + "\nCriteria: " + p.Criteria + "\nAuthorization basis (agent-reported; source remains authoritative): " + p.Basis + "\nSource assignment: " + task.ID + "\nSource scope: " + task.Prompt
+	template.Prompt = "Perform only the bounded read-only verification below, within the source assignment's existing scope. Do not repeat the original mutation, publish, or expand authority. Follow the saved completion policy: reviewed work delegates the substantive observation and cross-family review; routine work permits the permanent owner to observe directly. Record adc_obligation_result before finishing. A failed observation leaves the obligation unresolved. Do not manufacture an observation.\nOutcome: " + p.Outcome + "\nCriteria: " + p.Criteria + "\nAuthorization basis (agent-reported; source remains authoritative): " + p.Basis + "\nSource assignment: " + task.ID + "\nSource scope: " + task.Prompt
 	o := Obligation{ID: id, Org: r.Org, Area: area.ID, Owner: r.Agent, SourceTask: task.ID, SourceRun: r.ID, Outcome: p.Outcome, Criteria: p.Criteria, Basis: p.Basis, Due: p.Due, State: "scheduled", Created: now(), Revision: 1}
 	f := ObligationFunding{ID: "obligation-funding:" + id, Template: template}
 	return o, s.Batch(Write{"obligation", o.Org, o.SourceTask, o.State, o.ID, o}, Write{"obligation-funding", o.Org, o.ID, "", f.ID, f})
@@ -294,7 +300,7 @@ func (e *Engine) recordObservation(r Run, p observationInput) (ObligationObserva
 	if p.Obligation == "" && e.Store.Get(r.Task, &task) == nil {
 		p.Obligation = task.Obligation
 	}
-	if e.Store.Get(p.Obligation, &o) != nil || o.Org != r.Org || o.Task != r.Task || o.State != "verifying" || e.Store.Get(r.Task, &task) != nil || task.Obligation != o.ID || r.Parent == "" || r.ReviewOf != "" {
+	if e.Store.Get(p.Obligation, &o) != nil || o.Org != r.Org || o.Task != r.Task || o.State != "verifying" || e.Store.Get(r.Task, &task) != nil || task.Obligation != o.ID || (r.Parent == "" && !routineCompletion(task)) || r.ReviewOf != "" {
 		return ObligationObservation{}, fmt.Errorf("only a substantive worker on this verification assignment can record its observation")
 	}
 	if p.Outcome != "pass" && p.Outcome != "fail" {
@@ -398,7 +404,7 @@ func (e *Engine) dispatchObligations(at time.Time) {
 					if worker.Superseded || worker.State == "cancelled" {
 						continue
 					}
-					if worker.ID == "" || worker.State != "complete" || !e.hasCurrentReview(worker, taskReviews(s, task.ID)) {
+					if worker.ID == "" || worker.State != "complete" || (e.requiresIndependentReview(task, worker) && !e.hasCurrentReview(worker, taskReviews(s, task.ID))) {
 						failed = true
 						continue
 					}
@@ -410,7 +416,7 @@ func (e *Engine) dispatchObligations(at time.Time) {
 					}
 				}
 				if passed && !failed {
-					o.State, o.Note = "resolved", "Verification independently reviewed; evidence available in the linked assignment"
+					o.State, o.Note = "resolved", "Verification complete under its saved completion policy; evidence available in the linked assignment"
 				}
 			} else {
 				continue
@@ -579,7 +585,7 @@ func (e *Engine) ownershipTools(original Run) []copilot.Tool {
 			}
 			return e.registerFollowup(r, p, time.Now())
 		}),
-		copilot.DefineTool("adc_obligation_result", "As a substantive verification worker, record pass or fail for this assignment's linked obligation (Obligation may be omitted), observed Summary, evidence Reference and current observation Revision (0 initially). Then finish and obtain independent review. This evidence participates in the review revision and does not itself close the obligation.", func(p observationInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_obligation_result", "As a substantive verification worker, record pass or fail for this assignment's linked obligation (Obligation may be omitted), observed Summary, evidence Reference and current observation Revision (0 initially). Then finish under the saved completion policy; reviewed work obtains independent review, while routine work can be observed directly by the owner. This evidence participates in the review revision and does not itself close the obligation.", func(p observationInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()

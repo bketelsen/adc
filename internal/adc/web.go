@@ -88,7 +88,7 @@ type Web struct {
 }
 
 func NewWeb(s *Store, e *Engine, secure bool) *Web {
-	f := template.FuncMap{"attentionSummary": attentionSummary, "planGraph": planGraph, "clip": func(s string, n int) string {
+	f := template.FuncMap{"completionPolicy": completionPolicy, "attentionSummary": attentionSummary, "planGraph": planGraph, "clip": func(s string, n int) string {
 		r := []rune(s)
 		if len(r) > n {
 			return string(r[:n-1]) + "…"
@@ -262,6 +262,7 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.Defaults[d.Category] = d.Agent
 	}
 	p.Tasks = list[Assignment](w.Store, "assignment", orgID)
+	p.Areas = list[Area](w.Store, "area", orgID)
 	p.Decisions = pendingOrganizationDecisions(w.Store, orgID)
 	p.ProposalCount = pendingProposals(w.Store, orgID)
 	p.Connections = list[Connection](w.Store, "connection", orgID)
@@ -655,7 +656,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if f("title") == "" || f("prompt") == "" {
 			return errors.New("A title and requested outcome are required")
 		}
-		return w.Engine.CreateAssignment(Assignment{ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")})
+		return w.Engine.CreateAssignment(Assignment{Area: f("area"), ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")})
 	case "/members":
 		var id string
 		if err := s.db.QueryRow(`SELECT id FROM users WHERE username=?`, strings.ToLower(f("username"))).Scan(&id); err != nil {

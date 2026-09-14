@@ -328,6 +328,7 @@ func (e *Engine) revision(r Run) string {
 	h.Write(e.milestoneRevision(r))
 	h.Write(e.observationRevision(r))
 	h.Write(e.ownerDeliverableRevision(r))
+	h.Write(e.completionEvidenceRevision(r))
 	if v := e.Store.integrationEvidence(r.ID); v.ID != "" {
 		b, _ := json.Marshal(v)
 		h.Write(b)
@@ -494,6 +495,8 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 		}
 	}
 	contextData["recent_tool_evidence"] = recent
+	system += completionInstructions(t)
+	contextData["completion_evidence"] = e.completionEvidence(r)
 	contextData["owner"] = e.ownerContext(r)
 	contextData["owner_coordination"] = e.requestContext(r)
 	contextData["assessment"] = e.assessmentContext(t)
@@ -668,6 +671,9 @@ func (e *Engine) CreateAssignment(t Assignment) error {
 
 func (e *Engine) assignmentWrites(t Assignment) ([]Write, error) {
 	s := e.Store
+	if err := s.snapshotCompletion(&t); err != nil {
+		return nil, err
+	}
 	if t.Attention != nil {
 		var err error
 		t, err = e.prepareAttention(t)
@@ -836,12 +842,15 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.proposeWork(r, p)
 		}),
-		copilot.DefineTool("adc_status", "Read current assignment runs and document references without blocking. Use ADC run IDs for messages; never provider-native agent tools.", func(_ struct{}, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_status", "Read durable assignment state without blocking. Prefer View=summary for coordination; View=run plus ID retrieves one full run; review shows your review target; assessment, connections, proposals and documents provide focused evidence. Omit View for the legacy full snapshot only when needed. Use ADC run IDs, never native agent IDs.", func(p statusInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
 			if err != nil {
 				return nil, err
+			}
+			if p.View != "" {
+				return e.statusView(r, p)
 			}
 			var task Assignment
 			_ = s.Get(r.Task, &task)
@@ -849,7 +858,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"assessment": e.assessmentContext(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"completion_evidence": e.completionEvidence(r), "completion_policy": completionPolicy(task), "assessment": e.assessmentContext(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -943,7 +952,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					continue
 				}
 				if p.ReviewOf == "" {
-					if (existing.Prompt == p.Prompt || existing.Prompt == p.Prompt+attentionScanInstructions) && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
+					if (existing.Prompt == p.Prompt || existing.Prompt == p.Prompt+attentionScanInstructions || existing.Prompt == p.Prompt+verificationInstructions) && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
 						return existing, nil
 					}
 				} else {
@@ -1012,6 +1021,9 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if assignment.Attention != nil && e.attentionStageRemaining(assignment, r) <= 0 {
 				return nil, fmt.Errorf("the %s stage has spent its approved activation budget; retain unknowns or finish within remaining scope", runAttentionStage(r))
 			}
+			if assignment.Obligation != "" && r.ReviewOf == "" {
+				r.Prompt += verificationInstructions
+			}
 			if assignment.Attention != nil && r.AttentionStage == "scan" && r.ReviewOf == "" {
 				r.Prompt += attentionScanInstructions
 			}
@@ -1078,7 +1090,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 						return "Durable wait resolved or stopped before this call; inspect adc_status and continue, retry after fixing the cause, or report a blocker.", nil
 					}
 				}
-				return "", fmt.Errorf("no pending children; continue or finish")
+				return "No delegated work is pending. Continue with the completed results or finish if the objective is achieved. If you just arranged your own review, call adc_finish so that reviewer can start.", nil
 			}
 			r.State = "waiting"
 			return "Waiting; end your turn. ADC will resume you.", s.Put("run", r.Org, r.Task, r.State, r.ID, r)
@@ -1222,7 +1234,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 				for _, doc := range taskDocs(s, r.Task) {
 					documentOwners[doc.Run] = true
 				}
-				if documentOwners[r.ID] {
+				if documentOwners[r.ID] && !routineCompletion(assignment) {
 					return "", fmt.Errorf("delegate finalization of supervisor-authored documents to a specialist and obtain independent review before completing")
 				}
 				reviewed := false
@@ -1238,16 +1250,22 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					if pass {
 						reviewed = true
 					}
-					if (target.Category == "implementation" || len(target.Code) > 0 || documentOwners[target.ID] || e.obligationObservation(target).ID != "" || e.hasOwnerDeliverable(target)) && !pass {
+					if e.requiresIndependentReview(assignment, target) && !pass {
 						return "", fmt.Errorf("independent review required for %s", target.Title)
 					}
 				}
-				if !reviewed {
+				if !reviewed && !routineCompletion(assignment) {
 					return "", fmt.Errorf("assignment requires at least one substantive independent cross-family review")
 				}
 				var task Assignment
 				if s.Get(r.Task, &task) != nil {
 					return "", fmt.Errorf("assignment missing")
+				}
+				if !e.verificationEvidenceComplete(task) {
+					return "", fmt.Errorf("verification needs its stored adc_obligation_result and any required independent review before completion; an ordinary report does not record the obligation outcome")
+				}
+				if routineCompletion(task) && !e.routineEvidenceComplete(task) {
+					return "", fmt.Errorf("record observed completion evidence using adc_evidence (or adc_obligation_result) before finishing")
 				}
 				if err := e.attentionComplete(task); err != nil {
 					return "", err
@@ -1282,10 +1300,17 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.repairTools(original)...)
 	tools = append(tools, e.ownershipTools(original)...)
 	tools = append(tools, e.attentionTools(original)...)
+	tools = append(tools, e.completionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
 	filtered := tools[:0]
 	for _, tool := range tools {
-		if tool.Name == "adc_obligation_result" && (task.Obligation == "" || original.Parent == "" || original.ReviewOf != "") {
+		if tool.Name == "adc_submit_review" {
+			_, _, planned := e.plannedStep(original)
+			if !planned || original.ReviewOf != "" {
+				continue
+			}
+		}
+		if tool.Name == "adc_obligation_result" && (task.Obligation == "" || (original.Parent == "" && !routineCompletion(task)) || original.ReviewOf != "") {
 			continue
 		}
 		if tool.Name == "adc_validate" && original.Execution != "protected" {

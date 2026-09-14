@@ -19,6 +19,7 @@ type Agent struct {
 	Tools                                                                     []string
 }
 type Assignment struct {
+	Completion                                                              *CompletionPolicy
 	Attention                                                               *AttentionPolicy
 	AttentionStarted                                                        string
 	Area                                                                    string

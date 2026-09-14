@@ -11,6 +11,7 @@ import (
 )
 
 type WorkProposal struct {
+	Area                                                             string
 	Attention                                                        *AttentionPolicy
 	Execution                                                        string
 	Cadence                                                          Cadence
@@ -26,6 +27,7 @@ type ProposalNote struct {
 	ID, Org, Proposal, Author, Message, Created, Task string
 }
 type proposalInput struct {
+	Area                                                                             string           `json:"Area,omitempty"`
 	Attention                                                                        *AttentionPolicy `json:"Attention,omitempty"`
 	Cadence                                                                          *Cadence         `json:"Cadence,omitempty"`
 	Validation, Rollback                                                             string
@@ -85,6 +87,12 @@ func relatedProposals(s *Store, p WorkProposal) []RelatedWork {
 	return out
 }
 func validateProposal(s *Store, p *WorkProposal) error {
+	if p.Area != "" {
+		var a Area
+		if s.Get(p.Area, &a) != nil || a.Org != p.Org {
+			return fmt.Errorf("select an area in this organization")
+		}
+	}
 	if p.Attention != nil {
 		if p.Cadence.Frequency == "" {
 			return fmt.Errorf("Attention applies only to a NEW recurring assessment program. For one-off work omit Attention and Cadence (or set them to null); do not copy the current assignment attention policy")
@@ -178,6 +186,13 @@ func (e *Engine) proposeWork(r Run, input proposalInput) (proposalResult, error)
 	if input.Attention != nil {
 		p.Attention = input.Attention
 	}
+	if input.Area != "" {
+		p.Area = input.Area
+	} else if input.ID == "" {
+		var source Assignment
+		_ = s.Get(r.Task, &source)
+		p.Area = source.Area
+	}
 	p.Title = strings.TrimSpace(input.Title)
 	p.Rationale = input.Rationale
 	p.Scope = input.Scope
@@ -188,6 +203,9 @@ func (e *Engine) proposeWork(r Run, input proposalInput) (proposalResult, error)
 	p.Updated = now()
 	if input.Cadence != nil {
 		p.Cadence = *input.Cadence
+		if p.Cadence.Frequency == "" && input.Attention == nil {
+			p.Attention = nil
+		}
 	}
 	p.Validation = input.Validation
 	p.Rollback = input.Rollback
@@ -206,10 +224,10 @@ func (e *Engine) proposeWork(r Run, input proposalInput) (proposalResult, error)
 		var source Assignment
 		_ = s.Get(r.Task, &source)
 		for _, existing := range list[WorkProposal](s, "proposal", p.Org) {
-			if source.Attention != nil && existing.Owner == p.Owner && normalizedWork(existing.Scope) == normalizedWork(p.Scope) && normalizedWork(existing.Evidence) == normalizedWork(p.Evidence) && sameAttention(existing.Attention, p.Attention) && existing.Cadence == p.Cadence {
+			if source.Attention != nil && existing.Area == p.Area && existing.Owner == p.Owner && normalizedWork(existing.Scope) == normalizedWork(p.Scope) && normalizedWork(existing.Evidence) == normalizedWork(p.Evidence) && sameAttention(existing.Attention, p.Attention) && existing.Cadence == p.Cadence {
 				return proposalResult{existing, true, relatedProposals(s, existing)}, nil
 			}
-			if sameAttention(existing.Attention, p.Attention) && existing.Cadence == p.Cadence && strings.EqualFold(strings.Join(strings.Fields(existing.Title), " "), strings.Join(strings.Fields(p.Title), " ")) && strings.Join(strings.Fields(existing.Scope), " ") == strings.Join(strings.Fields(p.Scope), " ") {
+			if existing.Area == p.Area && sameAttention(existing.Attention, p.Attention) && existing.Cadence == p.Cadence && strings.EqualFold(strings.Join(strings.Fields(existing.Title), " "), strings.Join(strings.Fields(p.Title), " ")) && strings.Join(strings.Fields(existing.Scope), " ") == strings.Join(strings.Fields(p.Scope), " ") {
 				return proposalResult{existing, true, relatedProposals(s, existing)}, nil
 			}
 		}
@@ -287,6 +305,10 @@ func (w *Web) proposalAction(r *http.Request, page Page) error {
 		return fmt.Errorf("this proposal is already %s", p.State)
 	}
 	old := p
+	if p.Attention != nil {
+		copy := *p.Attention
+		p.Attention = &copy
+	}
 	writes := []Write{}
 	switch f("action") {
 	case "edit":
@@ -297,8 +319,14 @@ func (w *Web) proposalAction(r *http.Request, page Page) error {
 		p.Evidence = f("evidence")
 		p.Dependencies = f("dependencies")
 		p.Owner = f("owner")
+		if _, present := r.Form["area"]; present {
+			p.Area = f("area")
+		}
 		if _, present := r.Form["frequency"]; present {
 			p.Cadence, err = cadenceForm(r)
+			if p.Cadence.Frequency == "" {
+				p.Attention = nil
+			}
 			if err != nil {
 				return err
 			}
@@ -344,7 +372,7 @@ func (w *Web) proposalAction(r *http.Request, page Page) error {
 		if execution == "" {
 			execution = p.Execution
 		}
-		t := Assignment{Attention: p.Attention, Execution: execution, ID: ID(), Org: p.Org, Proposal: p.ID, Title: p.Title, Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: page.User.ID, Authority: authority}
+		t := Assignment{Area: p.Area, Attention: p.Attention, Execution: execution, ID: ID(), Org: p.Org, Proposal: p.ID, Title: p.Title, Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: page.User.ID, Authority: authority}
 		t.Prompt = "Suggested specialist agent ID: " + p.Owner + ". The selected accountable agent supervises the outcome and independent review.\n" + fmt.Sprintf("Human %s accepted proposal revision %d.\nOutcome: %s\nRationale: %s\nProposed scope (context): %s\nCompletion criteria: %s\nEvidence: %s\nDependencies: %s\nProposal: /proposal?org=%s&id=%s\nOrigin: /task?org=%s&id=%s\n\nHUMAN AUTHORIZED SCOPE (controls execution): %s\nAdvisory authority: %s. Stay within this scope; narrower human instructions take precedence over proposed context. Acceptance alone does not authorize merge, publication or deployment. Handle unresolved prerequisites before dependent actions.", page.User.Name, p.Revision, p.Title, p.Rationale, p.Scope, p.Criteria, p.Evidence, p.Dependencies, p.Org, p.ID, p.Org, p.Task, scope, authority)
 		if p.SourceDocument != "" {
 			t.Prompt += fmt.Sprintf("\nSource document: /task?org=%s&id=%s&doc=%s&rev=%d", p.Org, p.SourceTask, p.SourceDocument, p.SourceRevision)

@@ -81,10 +81,14 @@ func (w *Web) areaAction(r *http.Request, p Page) error {
 		}
 		a.Summary, a.Source, a.UnderstandingKind, a.ObservedAt = old.Summary, old.Source, old.UnderstandingKind, old.ObservedAt
 		a.PublicIntent, a.PublicSource = old.PublicIntent, old.PublicSource
+		a.CompletionMode = old.CompletionMode
 		if r.FormValue("public_edit") == "yes" {
 			a.PublicIntent = r.FormValue("public_intent")
 			a.PublicSource = r.FormValue("public_source")
 		}
+	}
+	if _, present := r.Form["completion_mode"]; present {
+		a.CompletionMode = r.FormValue("completion_mode")
 	}
 	_, err := w.Store.saveArea(a, rev, "human:"+p.User.ID)
 	return err

@@ -32,7 +32,12 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 				return copilot.ToolResult{ResultType: "failure", TextResultForLLM: message, Error: message}, nil
 			}
 			switch name {
-			case "adc_wait", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
+			case "adc_wait":
+				var current Run
+				if e.Store.Get(r.ID, &current) == nil && current.State != "running" {
+					outcome(inv.ToolCallID)
+				}
+			case "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
 				outcome(inv.ToolCallID)
 			}
 			return result, nil

@@ -38,19 +38,27 @@ func TestLiveOwnerFollowup(t *testing.T) {
 	a, err := s.saveArea(a, a.Revision, "human:owner")
 	must(t, err)
 	p := followupArgs(a)
+	p.Due = time.Now().Add(3 * time.Second).UTC().Format(time.RFC3339Nano)
 	p.Outcome = "Verify the remembered collection day"
 	p.Criteria = "The reported current day is Tuesday, matching the corrected area intent."
 	p.Basis = "Read-only synthetic continuity verification."
+	if os.Getenv("ADC_LIVE_OWNER_SCENARIO") == "homelab" {
+		a.Name = "NAS protection"
+		a.Intent = "Authoritative synthetic NAS observation at fixture://nas-protection: dataset containers has a verified daily backup; old statements claiming it has none are superseded. Supplied facts only; no shell, external services or real infrastructure action."
+		a.Summary = "Corrected ownership knowledge: containers has an observed daily backup."
+		a.Source = "fixture://nas-protection"
+		a, err = s.saveArea(a, a.Revision, "human:owner")
+		must(t, err)
+		p.Outcome = "Verify the corrected NAS backup coverage"
+		p.Criteria = "Report the supplied observed daily backup for dataset containers; keep this distinct from unverified restore testing."
+		p.Basis = "Read-only synthetic NAS continuity verification."
+	}
 	o := createFollowup(t, e, r, p)
 	completeSource(t, s, task, r)
-	// Simulates a due instant; live inference uses a fresh engine/session.
+	// A fresh engine dispatches at a real short due time. Accelerated clocks
+	// and database reopen behavior are covered by deterministic lifecycle tests.
 	e = NewEngine(s)
 	defer e.Stop()
-	e.dispatchObligations(time.Now().Add(2 * time.Hour))
-	must(t, s.Get(o.ID, &o))
-	if o.Task == "" {
-		t.Fatal("no verification task")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	e.Start(ctx)
@@ -62,6 +70,9 @@ func TestLiveOwnerFollowup(t *testing.T) {
 			t.Fatal("provider-backed follow-up timed out")
 		case <-ticker.C:
 			must(t, s.Get(o.ID, &o))
+			if o.Task == "" {
+				continue
+			}
 			if o.State == "blocked" {
 				t.Fatal("follow-up blocked", o.Note)
 			}

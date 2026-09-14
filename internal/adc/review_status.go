@@ -1,17 +1,15 @@
 package adc
 
 func (e *Engine) reviewNeeds(task string) []map[string]string {
-	owners := map[string]bool{}
-	for _, d := range taskDocs(e.Store, task) {
-		owners[d.Run] = true
-	}
+	var t Assignment
+	_ = e.Store.Get(task, &t)
 	reviews := taskReviews(e.Store, task)
 	needs := []map[string]string{}
 	for _, r := range taskRuns(e.Store, task) {
 		if r.Parent == "" || r.Category == "review" || r.State != "complete" {
 			continue
 		}
-		if r.Category != "implementation" && len(r.Code) == 0 && !owners[r.ID] && e.obligationObservation(r).ID == "" && !e.hasOwnerDeliverable(r) {
+		if !e.requiresIndependentReview(t, r) {
 			continue
 		}
 		if !e.hasCurrentReview(r, reviews) {

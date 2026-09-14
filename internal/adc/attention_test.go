@@ -3,6 +3,8 @@ package adc
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -256,5 +258,38 @@ func TestAttentionWorkerMustPersistObservationBeforeFinishing(t *testing.T) {
 	must(t, s.Get(worker.ID, &worker))
 	if worker.State != "complete" || len(e.reviewNeeds(task.ID)) != 1 {
 		t.Fatal("stored observation bypassed independent review")
+	}
+}
+
+func TestAttentionBudgetEditRetainsPreviousApprovalProposal(t *testing.T) {
+	s, e, task, root, _ := attentionFixture(t)
+	cadence := Cadence{Frequency: "daily", Timezone: "UTC", At: "09:00"}
+	proposal, err := e.proposeWork(root, proposalInput{Title: "Daily area review", Rationale: "Retain ownership", Scope: "Observe only", Criteria: "Review observed facts", Evidence: "fixture://scope", Owner: "boss", Cadence: &cadence, Attention: task.Attention})
+	must(t, err)
+	p := proposal.Proposal
+	form := url.Values{"id": {p.ID}, "revision": {strconv.Itoa(p.Revision)}, "action": {"edit"}, "title": {p.Title}, "rationale": {p.Rationale}, "scope": {p.Scope}, "criteria": {p.Criteria}, "evidence": {p.Evidence}, "owner": {p.Owner}, "attention_scan": {"4"}, "attention_investigate": {"6"}, "attention_review": {"4"}, "attention_proposals": {"1"}, "attention_minutes": {"10"}, "attention_concurrent": {"2"}}
+	req := httptest.NewRequest("POST", "/proposal-action", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	must(t, req.ParseForm())
+	must(t, NewWeb(s, e, false).proposalAction(req, Page{Org: Organization{ID: p.Org}, User: User{ID: task.Creator}}))
+	must(t, s.Get(p.ID, &p))
+	if p.Attention.Scan != 4 {
+		t.Fatal("budget not edited")
+	}
+	history := list[WorkProposal](s, "proposal-revision", p.Org)
+	if len(history) != 1 {
+		t.Fatal("previous proposal revision missing")
+	}
+	for _, v := range history {
+		if v.ID == p.ID && v.Attention.Scan != 3 {
+			t.Fatal("editing budget rewrote old proposal history")
+		}
+	}
+	// Explicitly choosing one-off removes the recurring policy; approval remains pending.
+	updated := proposalInput{ID: p.ID, Revision: p.Revision, Title: p.Title, Rationale: p.Rationale, Scope: p.Scope, Criteria: p.Criteria, Evidence: p.Evidence, Owner: p.Owner, Cadence: &Cadence{}}
+	result, err := e.proposeWork(root, updated)
+	must(t, err)
+	if result.Proposal.Attention != nil || result.Proposal.State != "pending" {
+		t.Fatal("one-off refinement retained a recurring policy or auto-approved")
 	}
 }
