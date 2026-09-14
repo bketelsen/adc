@@ -150,6 +150,7 @@ func (e *Engine) tick(ctx context.Context) {
 	defer s.mu.Unlock()
 	e.dispatchObligations(time.Now().UTC())
 	e.boundDiscovery()
+	e.dispatchOwnerRequests()
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
 	e.releaseRunResources()
@@ -489,6 +490,7 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 	}
 	contextData["recent_tool_evidence"] = recent
 	contextData["owner"] = e.ownerContext(r)
+	contextData["owner_coordination"] = e.requestContext(r)
 	contextData["observation"] = e.obligationObservation(r)
 	b, _ := json.Marshal(contextData)
 	s.mu.Unlock()
@@ -832,7 +834,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -1230,6 +1232,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)
 	tools = append(tools, e.ownershipTools(original)...)
+	tools = append(tools, e.ownerRequestTools(original)...)
 	filtered := tools[:0]
 	for _, tool := range tools {
 		if tool.Name == "adc_obligation_result" && (task.Obligation == "" || original.Parent == "" || original.ReviewOf != "") {

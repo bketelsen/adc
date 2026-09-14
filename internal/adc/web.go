@@ -28,6 +28,7 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Coordination                                                OwnerRequestPage
 	AreaKnowledge                                               []AreaKnowledge
 	Areas                                                       []Area
 	Obligations                                                 []Obligation
@@ -268,6 +269,8 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/":
+	case "/coordination":
+		w.ownerRequestPage(r, &p)
 	case "/areas":
 		p.View, p.Title = "areas", "Areas of responsibility"
 		p.Areas = list[Area](w.Store, "area", orgID)
@@ -570,6 +573,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 	defer s.mu.Unlock()
 	f := r.FormValue
 	switch r.URL.Path {
+	case "/owner-request-action":
+		return w.ownerRequestAction(r, p)
 	case "/area-action":
 		return w.areaAction(r, p)
 	case "/claude-logout":

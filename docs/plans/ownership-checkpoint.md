@@ -30,6 +30,18 @@ Independent Claude review passed after fixing exhausted-budget resume, late capa
 
 Pre-rollout consistent backup: `.adc/backups/before-knowledge-20260914T024947Z.db`; baseline in `work/knowledge-before-deploy.json`. There were no active provider runs. All 191 baseline tracked records retained IDs/parents/states after rollout; login responds. No production areas or schedules were populated with qualification data. Existing missing-`dig` preflight remains unchanged.
 
+## P3 first coordination queue — deployed
+
+Permanent-owner requests now retain lead/supervisor accountability, responses and history across assignments/restart. Cross-task delivery attaches only to already running/queued contexts; it does not bypass waits or create unfunded work. Three failed receiving attempts retain a blocker, and a later authorized owner run can answer a prior blocker with new evidence. Lead changes preserve spent attempts and original supervision. Shared Coordination UI provides bounded inspection and cancellation.
+
+`make verify` passed (41.956-second race suite, vet/build). Browser qualification passed on desktop/phone with collapsed evidence and cancellation. Independent Claude re-review passed after fixing waiting-run wakeups, blocked stale claims, recipient-as-lead transfer and repeated routing scans. Report: `work/owner-coordination-independent-review.json`. A harmless empty-result retry edge noted by review was tightened before final verification.
+
+Real Sol/Opus coordination passed after source completion (50.03 seconds). A second live fixture recovered a retained prior blocker through a later owner context and independent evidence review (76.03 seconds), without human continuation. The second recovered three ordinary tool errors, recorded in the backlog/P5 follow-through; it was not zero-friction. Logs: `/tmp/adc-owner-coordination-audit-corrections.log`, `/tmp/adc-owner-coordination-recovery-live.log`, `/tmp/adc-owner-coordination-browser.log`, `/tmp/adc-owner-coordination-verify-release.log`.
+
+Deployment: `.adc/backups/before-coordination-20260914T031538Z.db` and `work/coordination-before-deploy.json` preserve the consistent baseline. No provider run was active. All 191 tracked records retained IDs/parents/states after restart; login responds. Existing Monday 09:00 America/New_York TrueNAS schedule remains active and unchanged. No real owner requests or areas were invented for qualification.
+
+The queue's deliberately unfunded wait is not the completed background-attention experience. P4 must provide explicit standing scope/funding and a supervisor briefing, while preserving existing schedule semantics unless a human approves migration. Broader recovery accounting will evolve with that attention layer; the present counters cover requests and owner follow-up/discovery tasks.
+
 ## Next bounded action
 
-Continue P3 permanent-owner coordination, then bounded attention and the supervisor briefing. See [coordination seam](../design/owner-coordination.md). Existing P2 server stays running during development. A discovery subscription is not implicit authorization for unfunded background work. Keep pending dependencies visible, preserve receiving authority, and do not restart the product interview.
+Implement P4 bounded periodic assessment and the supervisor briefing using approved proposal/schedule machinery. Preserve the real TrueNAS weekly schedule until any concrete replacement is explicitly approved. Continue toward a reviewable migration option, not an automatic reinterpretation of prior approval. Existing P3 service stays running during development.

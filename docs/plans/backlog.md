@@ -2,7 +2,12 @@
 
 ## Continuing ownership — approved, in progress
 
-Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 and P1 are complete; owner knowledge and timed follow-up obligations are deployed. P2 maintained knowledge, selected-passage correction and bounded discovery are deployed. P3 permanent-owner coordination is next. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
+Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 and P1 are complete; owner knowledge and timed follow-up obligations are deployed. P2 maintained knowledge, selected-passage correction and bounded discovery are deployed. The first P3 permanent-owner coordination queue is deployed; P4 bounded attention and briefing is next. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
+
+### Ownership qualification follow-through
+
+- Permanent owner requests retain evidence across assignments and restart; the first P3 queue is deployed. They do not yet fund background activations when no eligible receiving context exists. P4 must make that funding deliberate and bring outstanding ownership into a supervisor briefing.
+- Real recovery qualification exposed ordinary workflow affordance friction: candidate-review tools visible outside planned steps, waiting after a fast child already completed, and reviewer delegation before the author finishes. Recovery succeeded without human continuation. Refine tool availability and completion/review guidance in P5; preserve real review gates rather than bypassing them.
 
 ## Active repair queue — 2026-09-13
 
