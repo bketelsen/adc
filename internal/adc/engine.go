@@ -148,6 +148,7 @@ func (e *Engine) tick(ctx context.Context) {
 	s := e.Store
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	e.dispatchObligations(time.Now().UTC())
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
 	e.releaseRunResources()
@@ -316,6 +317,7 @@ func (e *Engine) revision(r Run) string {
 	code, _ := json.Marshal(r.Code)
 	h.Write(code)
 	h.Write(e.milestoneRevision(r))
+	h.Write(e.observationRevision(r))
 	if v := e.Store.integrationEvidence(r.ID); v.ID != "" {
 		b, _ := json.Marshal(v)
 		h.Write(b)
@@ -334,6 +336,10 @@ func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 		redact.Values = append(redact.Values, token)
 	}
 	fail := func(err error) { e.handleFailure(ctx, r, fmt.Errorf("%s", redact.Text(err.Error()))) }
+	if reason := e.Store.obligationRunProblem(t); reason != "" {
+		fail(fmt.Errorf("%s", reason))
+		return
+	}
 	if err := validateSelfhostedExecution(t, a.Provider); err != nil {
 		fail(err)
 		return
@@ -478,6 +484,8 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 		}
 	}
 	contextData["recent_tool_evidence"] = recent
+	contextData["owner"] = e.ownerContext(r)
+	contextData["observation"] = e.obligationObservation(r)
 	b, _ := json.Marshal(contextData)
 	s.mu.Unlock()
 	if providerName(a.Provider) == "selfhosted" {
@@ -733,6 +741,11 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if err = s.Get(r.Task, &task); err == nil && (task.State == "paused" || task.State == "cancelled") {
 				err = fmt.Errorf("assignment is %s; end this turn", task.State)
 			}
+			if err == nil {
+				if reason := e.Store.obligationRunProblem(task); reason != "" {
+					err = fmt.Errorf("%s", reason)
+				}
+			}
 		}
 		return r, err
 	}
@@ -815,7 +828,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -1173,7 +1186,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					if pass {
 						reviewed = true
 					}
-					if (target.Category == "implementation" || len(target.Code) > 0 || documentOwners[target.ID]) && !pass {
+					if (target.Category == "implementation" || len(target.Code) > 0 || documentOwners[target.ID] || e.obligationObservation(target).ID != "") && !pass {
 						return "", fmt.Errorf("independent review required for %s", target.Title)
 					}
 				}
@@ -1212,8 +1225,12 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	}
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)
+	tools = append(tools, e.ownershipTools(original)...)
 	filtered := tools[:0]
 	for _, tool := range tools {
+		if tool.Name == "adc_obligation_result" && (task.Obligation == "" || original.Parent == "" || original.ReviewOf != "") {
+			continue
+		}
 		if tool.Name == "adc_validate" && original.Execution != "protected" {
 			continue
 		}

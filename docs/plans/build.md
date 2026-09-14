@@ -208,3 +208,8 @@ Qualification: `make verify`, desktop/phone browser fixture, and independent Cla
 
 
 Delivery recovery repair is deployed (2026-09-13): candidate review before external milestones; approved action dispatch and one-time outcome recording; in-place execution-guidance/preflight repair; advisory test resources; nonblocking supervisor waits; live plan graph, related runs/decisions and connection editor. Vet/race/build, browser checks and independent Claude review passed. On restart the wiki worker began its first activation and Repogen retained completed work and resumed review. See the backlog deployment checkpoint for observed limits and evidence.
+
+
+## Continuing ownership evolution
+
+Brian approved the [ownership evolution plan](ownership-evolution.md). The [desired state](../design/desired-state.md) extends the original product with maintained owner understanding, continuing obligations and bounded attention. Existing assignments and approvals retain their semantics; implementation and rollout progress is recorded in [the ownership checkpoint](ownership-checkpoint.md). This evolution does not authorize unrelated business operations.

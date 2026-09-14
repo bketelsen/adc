@@ -19,6 +19,7 @@ type Agent struct {
 	Tools                                                                     []string
 }
 type Assignment struct {
+	Obligation                                                              string
 	ConstrainCapabilities                                                   bool
 	Execution                                                               string
 	Capabilities                                                            []CapabilityGrant

@@ -1,5 +1,9 @@
 # ADC priorities after the first real delivery
 
+## Continuing ownership — approved, in progress
+
+Brian approved the [ownership evolution plan](ownership-evolution.md) based on the [desired state](../design/desired-state.md). This is the current development direction. P0 baseline/coexistence investigation is complete; P1 owner knowledge and timed follow-up obligations are implemented locally and undergoing qualification. Existing delivery repair work remains deployed and must retain regression coverage. See [the current checkpoint](ownership-checkpoint.md) before continuing; do not interpret older historical next-step paragraphs as the current priority.
+
 ## Active repair queue — 2026-09-13
 
 This is the current development priority order, ahead of the remaining feature roadmap below. Owner: Codex in the ADC development conversation. A diagnosis or a manual intervention is not an implemented fix. The delivery repair queue is implemented, qualified and deployed. The monitoring heartbeat remains read-only; development and deployment are owned by this conversation. Update this section when implementation starts, checks finish, or a change is deployed, rather than leaving commitments only in chat.

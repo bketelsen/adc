@@ -28,6 +28,8 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
+	Areas                                                       []Area
+	Obligations                                                 []Obligation
 	Connection                                                  ConnectionPage
 	Selfhosted                                                  SelfhostedAccountPage
 	Plan                                                        ExecutionPlan
@@ -265,6 +267,10 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/":
+	case "/areas":
+		p.View, p.Title = "areas", "Areas of responsibility"
+		p.Areas = list[Area](w.Store, "area", orgID)
+		p.Obligations = list[Obligation](w.Store, "obligation", orgID)
 	case "/live-work":
 		w.liveWork(rw, r, p)
 		return
@@ -547,6 +553,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 	defer s.mu.Unlock()
 	f := r.FormValue
 	switch r.URL.Path {
+	case "/area-action":
+		return w.areaAction(r, p)
 	case "/claude-logout":
 		return w.claudeLogout(r, p)
 	case "/codex-login":
