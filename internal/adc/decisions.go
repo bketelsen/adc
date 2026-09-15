@@ -122,3 +122,24 @@ func (e *Engine) submitDecision(r Run, p decisionInput) (Decision, error) {
 	s.Log(r.Org, r.Task, r.ID, "decision", d.Question)
 	return d, nil
 }
+
+// Withdrawal removes only an unanswered request, never human authority or its
+// recorded outcome. The caller already passed the active-run guard.
+func (e *Engine) withdrawDecision(r Run, id, reason string) (Decision, error) {
+	var d Decision
+	if strings.TrimSpace(reason) == "" || len(reason) > 1000 {
+		return d, fmt.Errorf("provide a concise reason for withdrawing the obsolete request")
+	}
+	if e.Store.Get(id, &d) != nil || d.Org != r.Org || d.Task != r.Task || d.Run != r.ID || d.State != "pending" || d.Kind == "permission" {
+		return d, fmt.Errorf("withdraw only your own pending non-permission decision; human answers and access requests cannot be withdrawn here")
+	}
+	d.State = "withdrawn"
+	d.Answer = "Withdrawn by requesting agent: " + reason
+	// No approval outcome or human attribution is recorded.
+	d.Outcome = ""
+	if err := e.Store.Put("decision", d.Org, d.Task, d.State, d.ID, d); err != nil {
+		return d, err
+	}
+	e.Store.Log(r.Org, r.Task, r.ID, "decision-withdrawn", reason)
+	return d, nil
+}

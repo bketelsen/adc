@@ -15,6 +15,12 @@ func (w *Web) executionPlanAction(r *http.Request, page Page) error {
 	if p.ID == "" || p.Org != page.Org.ID || err != nil || revision != p.Revision {
 		return fmt.Errorf("plan unavailable or revision changed; reload before starting")
 	}
+	if r.FormValue("action") == "omit-step" {
+		return w.Engine.omitPlanStep(p, r.FormValue("step"), r.FormValue("reason"), page.User.ID)
+	}
+	if r.FormValue("action") == "remove-requirement" {
+		return w.Engine.removePlanRequirement(p, r.FormValue("step"), r.FormValue("requirement"), r.FormValue("reason"), page.User.ID)
+	}
 	if r.FormValue("action") == "milestone" || r.FormValue("action") == "withdraw-milestone" {
 		var worker Run
 		if s.Get(r.FormValue("run"), &worker) != nil || worker.Task != p.Task || worker.Org != p.Org {

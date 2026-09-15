@@ -37,6 +37,7 @@ type Assignment struct {
 	Revision                                                                int
 }
 type Run struct {
+	WaitAssessment                                                                                                                    string
 	AttentionStage                                                                                                                    string
 	CandidateRevision, ReviewStage                                                                                                    string
 	Preflight                                                                                                                         *PreflightSpec

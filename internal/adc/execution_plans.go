@@ -21,7 +21,13 @@ type PlanAttempt struct {
 	Inputs                       map[string]string
 }
 type PlanRelatedRun struct{ ID, Org, Agent, Title, State string }
+type PlanOmission struct{ Human, Reason, At string }
+
+func stepSatisfied(s PlanStep) bool     { return s.State == "complete" || s.Omission != nil }
+func omittedRevision(s PlanStep) string { return "omitted:" + s.Key + ":" + s.Omission.At }
+
 type PlanStep struct {
+	Omission                   *PlanOmission `json:",omitempty"`
 	Related                    []PlanRelatedRun
 	Decisions                  []Decision
 	Readiness, ReviewReadiness ExecutionReadiness
@@ -279,6 +285,13 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 	allDecisions := taskDecisions(e.Store, p.Task)
 	for i := range p.Steps {
 		step := &p.Steps[i]
+		if step.Omission != nil {
+			step.State = "omitted"
+			step.Reason = "Omitted by the human: " + step.Omission.Reason
+			states[step.Key] = true
+			revisions[step.Key] = omittedRevision(*step)
+			continue
+		}
 		step.Evidence = nil
 		step.Waits = nil
 		for _, req := range step.Requirements {
@@ -363,6 +376,9 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 	for range p.Steps {
 		for i := range p.Steps {
 			step := &p.Steps[i]
+			if step.Omission != nil {
+				continue
+			}
 			for _, dep := range step.DependsOn {
 				stale := step.Run != "" && step.Inputs[dep] != revisions[dep]
 				if !states[dep] || stale {
@@ -381,7 +397,7 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 	}
 	complete := true
 	for _, step := range p.Steps {
-		if step.State != "complete" {
+		if !stepSatisfied(step) {
 			complete = false
 		}
 	}
@@ -406,11 +422,14 @@ func (e *Engine) dispatchPlans() {
 		if s.Get(stored.Task, &task) != nil || task.Org != stored.Org || task.State == "paused" || task.State == "cancelled" || task.State == "ready" || s.Get(stored.Supervisor, &root) != nil {
 			continue
 		}
-		if root.State == "blocked" || root.State == "cancelled" || root.State == "complete" || pendingDecision(s, task.ID, root.ID) {
+		if root.State == "blocked" || root.State == "cancelled" || root.State == "complete" {
 			continue
 		}
 		// Reuse the same reviewer for final outcome evidence after candidate delivery.
 		for _, step := range stored.Steps {
+			if step.Omission != nil {
+				continue
+			}
 			var worker, reviewer Run
 			if s.Get(step.Run, &worker) == nil && s.Get(step.Review, &reviewer) == nil && worker.State == "complete" && reviewer.State == "complete" && reviewer.ReviewStage == "candidate" {
 				reviewer.State = "waiting"
@@ -426,7 +445,7 @@ func (e *Engine) dispatchPlans() {
 				ready := true
 				for _, dep := range step.DependsOn {
 					for _, upstream := range p.Steps {
-						if upstream.Key == dep && upstream.State != "complete" {
+						if upstream.Key == dep && !stepSatisfied(upstream) {
 							ready = false
 						}
 					}
@@ -439,11 +458,11 @@ func (e *Engine) dispatchPlans() {
 		verifiedCode := map[string]error{}
 		ready := map[string]bool{}
 		for _, step := range p.Steps {
-			ready[step.Key] = step.State == "complete"
+			ready[step.Key] = stepSatisfied(step)
 		}
 		for i := range p.Steps {
 			step := &p.Steps[i]
-			if step.Run != "" {
+			if step.Run != "" || step.Omission != nil {
 				continue
 			}
 			eligible := true
@@ -464,6 +483,11 @@ func (e *Engine) dispatchPlans() {
 			for _, dep := range step.DependsOn {
 				for _, upstream := range p.Steps {
 					if upstream.Key == dep {
+						if upstream.Omission != nil {
+							step.Inputs[dep] = omittedRevision(upstream)
+							evidence += fmt.Sprintf("\nFormer prerequisite %s was explicitly omitted by the human: %s. It has no admitted output to consume; do not claim its criteria were fulfilled.", dep, upstream.Omission.Reason)
+							continue
+						}
 						var run Run
 						if s.Get(upstream.Run, &run) != nil {
 							eligible = false
@@ -546,7 +570,7 @@ func (e *Engine) planAllowsDispatch(r Run) bool {
 	p = e.inspectPlan(p)
 	for _, step := range p.Steps {
 		if step.Run == r.ID || step.Review == r.ID {
-			return step.State != "blocked" || !strings.HasPrefix(step.Reason, "Prerequisite ")
+			return step.Omission == nil && (step.State != "blocked" || !strings.HasPrefix(step.Reason, "Prerequisite "))
 		}
 	}
 	return true

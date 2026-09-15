@@ -6,7 +6,7 @@ func (e *Engine) reviewNeeds(task string) []map[string]string {
 	reviews := taskReviews(e.Store, task)
 	needs := []map[string]string{}
 	for _, r := range taskRuns(e.Store, task) {
-		if r.Parent == "" || r.Category == "review" || r.State != "complete" {
+		if r.Superseded || r.Parent == "" || r.Category == "review" || r.State != "complete" {
 			continue
 		}
 		if !e.requiresIndependentReview(t, r) {

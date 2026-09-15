@@ -169,7 +169,7 @@ func (e *Engine) integrationMissing(r Run) string {
 			continue
 		}
 		for _, upstream := range plan.Steps {
-			if !containsString(step.DependsOn, upstream.Key) {
+			if upstream.Omission != nil || !containsString(step.DependsOn, upstream.Key) {
 				continue
 			}
 			for _, repo := range e.Store.integrationEvidence(upstream.Run).Repositories {
@@ -250,6 +250,9 @@ func (e *Engine) saveIntegration(r Run, p integrationInput) (IntegrationEvidence
 		for _, upstream := range plan.Steps {
 			if upstream.Key != dep.Step {
 				continue
+			}
+			if upstream.Omission != nil {
+				return old, fmt.Errorf("omitted steps have no admitted output to consume")
 			}
 			var source Run
 			if e.Store.Get(upstream.Run, &source) != nil || step.Inputs[dep.Step] != source.ID+":"+e.revision(source) {

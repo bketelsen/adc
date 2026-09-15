@@ -501,16 +501,8 @@ func TestExecutionPlanSupervisorAndPreDispatchBlockers(t *testing.T) {
 	if planStepByKey(t, s, "R1").Run != "" {
 		t.Fatal("dispatched without accountable supervisor")
 	}
-	root.State = "waiting"
-	must(t, s.Put("run", root.Org, root.Task, root.State, root.ID, root))
-	d := Decision{ID: "root-decision", Org: root.Org, Task: root.Task, Run: root.ID, State: "pending", Question: "Scope question"}
-	must(t, s.Put("decision", d.Org, d.Task, d.State, d.ID, d))
-	planDispatch(e)
-	if planStepByKey(t, s, "R1").Run != "" {
-		t.Fatal("dispatched while supervisor awaited scope decision")
-	}
-	d.State = "answered"
-	must(t, s.Put("decision", d.Org, d.Task, d.State, d.ID, d))
+	// Pending supervisor questions are covered separately: they no longer
+	// freeze the already-authorized graph. A blocked supervisor still does.
 	root.State = "running"
 	must(t, s.Put("run", root.Org, root.Task, root.State, root.ID, root))
 	// Removing a previously funded portfolio is caught before any worker exists.

@@ -3,8 +3,9 @@ package adc
 import "fmt"
 
 type statusInput struct {
-	View string `json:"View,omitempty"`
-	ID   string `json:"ID,omitempty"`
+	View   string `json:"View,omitempty"`
+	ID     string `json:"ID,omitempty"`
+	Offset int    `json:"Offset,omitempty"`
 }
 
 func (e *Engine) statusView(r Run, p statusInput) (any, error) {
@@ -12,6 +13,31 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 	var task Assignment
 	_ = s.Get(r.Task, &task)
 	switch p.View {
+	case "coordination":
+		return e.coordinationView(r, p.Offset), nil
+	case "step":
+		for _, step := range e.inspectPlan(s.taskPlan(r.Task)).Steps {
+			if step.Key == p.ID {
+				return step, nil
+			}
+		}
+		return nil, fmt.Errorf("unknown step key in this assignment")
+	case "decisions":
+		decisions := taskDecisions(s, r.Task)
+		if p.ID != "" {
+			for _, d := range decisions {
+				if d.ID == p.ID {
+					return d, nil
+				}
+			}
+			return nil, fmt.Errorf("decision unavailable in this assignment")
+		}
+		start, end := statusPage(p.Offset, len(decisions))
+		items := []map[string]any{}
+		for _, d := range decisions[start:end] {
+			items = append(items, map[string]any{"id": d.ID, "run": d.Run, "state": d.State, "brief": clipped(d.BriefText(), 500), "answer": clipped(d.Answer, 700), "outcome": d.Outcome, "resolved_at": d.ResolvedAt})
+		}
+		return map[string]any{"items": items, "total": len(decisions), "next_offset": end, "guidance": "Use Offset=next_offset for further pages, or ID for the exact decision. Resolved answers remain authoritative within their scope; do not repeat unchanged approvals."}, nil
 	case "run":
 		var target Run
 		if s.Get(p.ID, &target) != nil || target.Org != r.Org || target.Task != r.Task {
@@ -49,6 +75,6 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		}
 		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "assessment_available": task.Attention != nil, "completion_evidence": e.completionEvidence(r), "observation": e.obligationObservation(r), "guidance": "For exact run results use View run with ID; use review, assessment, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
 	default:
-		return nil, fmt.Errorf("View must be summary, run (with ID), review, assessment, connections, proposals or documents; omit for the full snapshot")
+		return nil, fmt.Errorf("View must be coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review, assessment, connections, proposals or documents; omit for the full snapshot")
 	}
 }

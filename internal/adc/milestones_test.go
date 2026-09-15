@@ -135,10 +135,13 @@ func TestMilestoneHumanBoundaryAndResume(t *testing.T) {
 	}
 	_, err := call(t, e, r, "adc_wait", map[string]any{})
 	must(t, err)
-	// No activation while the human input is absent, even with a fresh engine.
+	// The waiting worker must not activate without human evidence. Supervision
+	// may now wake once to present the missing question.
 	e = NewEngine(s)
 	e.runActivation = func(_ context.Context, active Run, _ Assignment, _ Account) {
-		t.Errorf("unexpected activation %s", active.ID)
+		if active.ID == r.ID || active.ReviewOf == r.ID {
+			t.Errorf("unexpected worker/reviewer activation %s", active.ID)
+		}
 	}
 	var root Run
 	must(t, s.Get(s.taskPlan(r.Task).Supervisor, &root))

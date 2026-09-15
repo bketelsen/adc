@@ -13,9 +13,9 @@ type PlanGraphNode struct {
 }
 type PlanGraphEdge struct{ From, To, Path string }
 type PlanGraph struct {
-	Nodes                                                      []PlanGraphNode
-	Edges                                                      []PlanGraphEdge
-	Width, Height, Complete, Active, Blocked, Waiting, Stopped int
+	Nodes                                                               []PlanGraphNode
+	Edges                                                               []PlanGraphEdge
+	Width, Height, Complete, Active, Blocked, Waiting, Stopped, Omitted int
 }
 
 // Layout is derived from prerequisite edges, not the order of plan rows. The
@@ -81,6 +81,8 @@ func planGraph(p ExecutionPlan) PlanGraph {
 				state = "draft"
 			}
 			switch state {
+			case "omitted":
+				g.Omitted++
 			case "complete":
 				g.Complete++
 			case "running", "review", "queued":

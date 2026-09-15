@@ -207,23 +207,42 @@ func (e *Engine) recoverDeliveryLifecycle() {
 	}
 }
 
+// A placeholder reviewer or an unasked human requirement cannot advance work.
+// Follow the whole delegated tree: a grandchild doing real work is progress.
 func (e *Engine) waitProgress(r Run) (blocked, progressing bool) {
-	if r.Parent == "" {
-		for _, step := range e.inspectPlan(e.Store.taskPlan(r.Task)).Steps {
-			if step.State == "blocked" {
-				blocked = true
+	runs := taskRuns(e.Store, r.Task)
+	members := map[string]bool{r.ID: true}
+	for range runs {
+		for _, child := range runs {
+			if !child.Superseded && members[child.Parent] {
+				members[child.ID] = true
 			}
 		}
 	}
-	for _, child := range taskRuns(e.Store, r.Task) {
-		if child.Parent != r.ID || child.Superseded {
+	if r.Parent == "" {
+		plan := e.inspectPlan(e.Store.taskPlan(r.Task))
+		for _, step := range plan.Steps {
+			if !stepSatisfied(step) && plan.State == "active" {
+				blocked = true
+			}
+			if step.Run == "" && step.State == "waiting" && step.Reason == "" && plan.State == "active" {
+				progressing = true
+			}
+		}
+	}
+	for _, child := range runs {
+		if child.ID == r.ID || !members[child.ID] || child.Superseded || child.State == "complete" || child.State == "cancelled" {
 			continue
 		}
-		if child.State == "blocked" {
-			blocked = true
-		}
-		if child.State == "running" || child.State == "queued" || (child.State == "waiting" && (e.pendingWait(child) || e.waitingHumanMilestone(child) || child.CandidateRevision != "" || pendingDecision(e.Store, r.Task, child.ID))) {
+		blocked = true
+		if child.State == "running" || child.State == "queued" || e.pendingWait(child) || pendingDecision(e.Store, r.Task, child.ID) {
 			progressing = true
+		}
+		if child.State == "waiting" && child.ReviewOf != "" {
+			var target Run
+			if e.Store.Get(child.ReviewOf, &target) == nil && target.Task == r.Task && !target.Superseded && e.reviewable(target) {
+				progressing = true
+			}
 		}
 	}
 	return
