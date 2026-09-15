@@ -19,6 +19,7 @@ type Agent struct {
 	Tools                                                                     []string
 }
 type Assignment struct {
+	AreaCreation                                                            bool
 	Completion                                                              *CompletionPolicy
 	Attention                                                               *AttentionPolicy
 	AttentionStarted                                                        string
@@ -65,6 +66,8 @@ type Connection struct {
 	Headers                                map[string]string
 }
 type Decision struct {
+	ProposedArea                                      *AreaSpec       `json:",omitempty"`
+	CreatedArea                                       string          `json:",omitempty"`
 	Action                                            *DecisionAction `json:",omitempty"`
 	Brief, Outcome, ResolvedBy, ResolvedAt            string
 	Acceptance                                        *DecisionAcceptance `json:",omitempty"`

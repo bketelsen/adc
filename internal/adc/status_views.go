@@ -13,6 +13,13 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 	var task Assignment
 	_ = s.Get(r.Task, &task)
 	switch p.View {
+	case "areas":
+		items := []map[string]any{}
+		for _, a := range list[Area](s, "area", r.Org) {
+			items = append(items, map[string]any{"id": a.ID, "name": a.Name, "owner": a.Owner, "intent": clipped(a.Intent, 600), "completion_mode": a.CompletionMode})
+		}
+		start, end := statusPage(p.Offset, len(items))
+		return map[string]any{"items": items[start:end], "total": len(items), "next_offset": end}, nil
 	case "coordination":
 		return e.coordinationView(r, p.Offset), nil
 	case "step":
@@ -75,6 +82,6 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		}
 		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "assessment_available": task.Attention != nil, "completion_evidence": e.completionEvidence(r), "observation": e.obligationObservation(r), "guidance": "For exact run results use View run with ID; use review, assessment, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
 	default:
-		return nil, fmt.Errorf("View must be coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review, assessment, connections, proposals or documents; omit for the full snapshot")
+		return nil, fmt.Errorf("View must be areas, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review, assessment, connections, proposals or documents; omit for the full snapshot")
 	}
 }

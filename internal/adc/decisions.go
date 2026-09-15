@@ -7,6 +7,7 @@ import (
 )
 
 type decisionInput struct {
+	ProposedArea   *AreaSpec            `json:"proposed_area,omitempty"`
 	Action         *decisionActionInput `json:"action,omitempty"`
 	Question, Kind string
 	Brief          string                   `json:"brief,omitempty"`
@@ -19,7 +20,7 @@ type decisionInput struct {
 // form cannot approve a proposal that changed after the human read it.
 func (e *Engine) submitDecision(r Run, p decisionInput) (Decision, error) {
 	s := e.Store
-	d := Decision{Brief: strings.TrimSpace(p.Brief), ID: ID(), Org: r.Org, Task: r.Task, Run: r.ID, Question: p.Question, Kind: p.Kind, Proposal: p.ProposedAgents, Replaces: p.Replaces, State: "pending"}
+	d := Decision{ProposedArea: p.ProposedArea, Brief: strings.TrimSpace(p.Brief), ID: ID(), Org: r.Org, Task: r.Task, Run: r.ID, Question: p.Question, Kind: p.Kind, Proposal: p.ProposedAgents, Replaces: p.Replaces, State: "pending"}
 	if p.Action != nil && p.Replaces == "" {
 		for _, prior := range taskDecisions(s, r.Task) {
 			if prior.Run == r.ID && prior.State == "answered" && prior.Outcome == "approve" && sameActionInput(p.Action, prior.Action) {
@@ -30,11 +31,23 @@ func (e *Engine) submitDecision(r Run, p decisionInput) (Decision, error) {
 			}
 		}
 	}
+	if p.ProposedArea != nil {
+		var task Assignment
+		if s.Get(r.Task, &task) != nil || !task.AreaCreation || task.Kind != "proposal" || p.Action != nil || p.Acceptance != nil || len(p.ProposedAgents) > 0 || p.Kind == "permission" {
+			return Decision{}, fmt.Errorf("area proposals belong to an area-creation conversation only")
+		}
+		if _, _, err := s.prepareProposedArea(r.Org, *p.ProposedArea, ""); err != nil {
+			return Decision{}, err
+		}
+	}
 	writes := []Write{}
 	var previous Decision
 	if p.Replaces != "" {
 		if s.Get(p.Replaces, &previous) != nil || previous.Org != r.Org || previous.Task != r.Task || previous.Run != r.ID || previous.State != "pending" || previous.Kind == "permission" {
 			return Decision{}, fmt.Errorf("replaces must identify this run's pending decision; resolved decisions cannot be rewritten")
+		}
+		if previous.ProposedArea != nil && p.ProposedArea == nil {
+			return Decision{}, fmt.Errorf("an area revision requires the complete proposed_area")
 		}
 		if len(previous.Proposal) > 0 && len(p.ProposedAgents) == 0 {
 			return Decision{}, fmt.Errorf("a revision requires the complete proposed_agents list")
@@ -48,7 +61,7 @@ func (e *Engine) submitDecision(r Run, p decisionInput) (Decision, error) {
 			if existing.Run != r.ID || existing.State != "pending" {
 				continue
 			}
-			if p.Question != existing.Question || strings.TrimSpace(p.Brief) != existing.Brief || !reflect.DeepEqual(p.ProposedAgents, existing.Proposal) || !sameAcceptanceInput(p.Acceptance, existing.Acceptance) || !sameActionInput(p.Action, existing.Action) {
+			if p.Question != existing.Question || strings.TrimSpace(p.Brief) != existing.Brief || !reflect.DeepEqual(p.ProposedAgents, existing.Proposal) || !sameAcceptanceInput(p.Acceptance, existing.Acceptance) || !sameActionInput(p.Action, existing.Action) || !reflect.DeepEqual(p.ProposedArea, existing.ProposedArea) {
 				return Decision{}, fmt.Errorf("decision %s is already pending; to revise it supply replaces=%s and the complete revised question, brief, acceptance (if any), and proposed_agents (for teams)", existing.ID, existing.ID)
 			}
 			if existing.Action != nil {

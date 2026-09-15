@@ -37,7 +37,7 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 				if e.Store.Get(r.ID, &current) == nil && current.State != "running" {
 					outcome(inv.ToolCallID)
 				}
-			case "adc_admission", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
+			case "adc_propose_area", "adc_admission", "adc_blocked", "adc_finish", "adc_review", "adc_decision", "adc_request_access":
 				outcome(inv.ToolCallID)
 			}
 			result.TextResultForLLM = inlineToolText(result.TextResultForLLM)

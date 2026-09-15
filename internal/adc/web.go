@@ -646,6 +646,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 		return SaveAgent(s, a, f("category_default") == "on")
 	case "/connections":
 		return w.saveConnection(r, p.Org.ID)
+	case "/area-proposals":
+		return w.startAreaConversation(r, p)
 	case "/team-proposals":
 		if f("prompt") == "" || Family(f("model")) == "" {
 			return errors.New("Describe your organization and choose an explicit supervisor model")
@@ -802,6 +804,28 @@ func (w *Web) action(r *http.Request, p Page) error {
 						t = value
 					}
 				}
+			}
+			if d.ProposedArea != nil && d.Outcome == "approve" {
+				if !t.AreaCreation || t.Kind != "proposal" {
+					return fmt.Errorf("area proposal conversation required")
+				}
+				area, areaWrites, err := s.prepareProposedArea(t.Org, *d.ProposedArea, "human:"+p.User.ID)
+				if err != nil {
+					return err
+				}
+				d.CreatedArea = area.ID
+				run.State = "complete"
+				run.Result = "Human approved and created the area: " + area.Name
+				t.State = "ready"
+				t.Output = run.Result
+				writes = append(writes, areaWrites...)
+				writes = append(writes, Write{"decision", d.Org, d.Task, d.State, d.ID, d}, Write{"run", run.Org, run.Task, run.State, run.ID, run}, Write{"assignment", t.Org, "", t.State, t.ID, t})
+				decisionLog = p.User.Name + " approved the area: " + area.Name
+				if err := commitResponse(writes); err != nil {
+					return err
+				}
+				r.Form.Set("return", "/areas?org="+area.Org+"#area-"+area.ID)
+				return nil
 			}
 			approveTeam := len(d.Proposal) > 0 && (d.Outcome == "approve" || (d.Outcome == "" && f("approve_team") == "on"))
 			if approveTeam {

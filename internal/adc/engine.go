@@ -455,12 +455,14 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 	if r.Execution == "protected" {
 		system += protectedInstructions
 	}
-	if t.Kind == "proposal" {
+	if t.AreaCreation {
+		system += "\nThis is an area-creation conversation, not execution work or team creation. Help the human turn their description into one area of responsibility. Ask focused conversational questions only where useful; suggest an existing permanent owner and clear intent, outcomes and boundaries. Use adc_status View=areas to avoid duplicating existing responsibilities and the supplied team to choose an owner. Propose with adc_propose_area when concrete enough for review; use its Replaces field to revise a pending proposal. Approval creates the area; do not invent owner understanding or start discovery, schedules, obligations, tools or permanent agents. Prefer reviewed completion unless the human chooses routine. Answer questions with adc_finish; subsequent human messages continue this conversation. The human reviews this configuration directly, so no QA delegation or document ceremony is needed. You have no external execution or MCP access in this conversation."
+	} else if t.Kind == "proposal" {
 		system += "\nThis is a proposal conversation only. Discuss or propose future work, without executing it or obtaining approvals through other tools. You intentionally have no MCP grants in this conversation. In the connections catalog, Granted describes only this restricted run, not permanent role access. Inspect team Tools when proposing future execution; do not report this expected conversation restriction as a missing team grant. Recurrence supports intervals, daily times and weekly times only. Do not use shell, external services or other provider tools to act on the proposal. Use supplied evidence, adc_status, adc_propose_work to create/revise pending proposals, and adc_finish to answer the human. Finish records discussion only, not execution or acceptance. No independent review committee is required for this human-reviewed proposal conversation."
 	}
 	var agentKind string
 	_ = s.db.QueryRow(`SELECT kind FROM records WHERE id=?`, r.Agent).Scan(&agentKind)
-	if agentKind == "guide" {
+	if agentKind == "guide" && !t.AreaCreation {
 		system += "\nSetup exception: you are the temporary team designer before any staff or category defaults exist. Do not delegate briefing work to nonexistent roles or defaults. You may directly author the setup document and submit proposed_agents with adc_decision. The instruction to delegate final document authorship applies to subsequent staffed assignments, not this team-setup proposal. Human approval completes this setup assignment. Inspect the sanitized connections catalog and propose appropriate connection IDs in each role’s Tools, including the supervisor who must delegate that access and any reviewer needing independent observation. Explain proposed access and any intentionally unassigned connections in the team packet. Listing connections does not grant this setup run access to use them."
 	}
 	s.mu.Lock()
@@ -548,6 +550,9 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 	if t.Kind == "proposal" {
 		config.ExcludedTools = nil
 		config.AvailableTools = []string{"adc_status", "adc_read_document", "adc_propose_work", "adc_finish", "adc_blocked"}
+		if t.AreaCreation {
+			config.AvailableTools = []string{"adc_status", "adc_read_document", "adc_propose_area", "adc_finish", "adc_blocked"}
+		}
 	}
 	if r.Execution == "protected" {
 		config.ExcludedTools = nil
@@ -690,7 +695,7 @@ func (e *Engine) CreateAssignment(t Assignment) error {
 	return e.Store.Batch(writes...)
 }
 
-func (e *Engine) assignmentWrites(t Assignment) ([]Write, error) {
+func (e *Engine) assignmentWrites(t Assignment, bootstrap ...Agent) ([]Write, error) {
 	s := e.Store
 	if err := s.snapshotCompletion(&t); err != nil {
 		return nil, err
@@ -703,7 +708,14 @@ func (e *Engine) assignmentWrites(t Assignment) ([]Write, error) {
 		}
 	}
 	var agent Agent
-	if err := s.Get(t.Owner, &agent); err != nil || agent.Org != t.Org {
+	if len(bootstrap) == 1 {
+		agent = bootstrap[0]
+	} else if len(bootstrap) > 1 {
+		return nil, fmt.Errorf("one bootstrap guide allowed")
+	} else {
+		_ = s.Get(t.Owner, &agent)
+	}
+	if agent.ID != t.Owner || agent.Org != t.Org {
 		return nil, fmt.Errorf("choose an agent in this organization")
 	}
 	var a Account
@@ -1324,6 +1336,11 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	_ = s.Get(original.Task, &task)
 	if task.Kind == "proposal" {
 		allowed := map[string]bool{"adc_status": true, "adc_read_document": true, "adc_propose_work": true, "adc_finish": true, "adc_blocked": true}
+		if task.AreaCreation {
+			delete(allowed, "adc_propose_work")
+			allowed["adc_propose_area"] = true
+			tools = append(tools, e.areaProposalTool(original))
+		}
 		filtered := []copilot.Tool{}
 		for _, tool := range tools {
 			if allowed[tool.Name] {

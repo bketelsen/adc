@@ -91,46 +91,54 @@ func (s *Store) checkOwnershipText(org string, values ...string) error {
 
 // Caller holds Store.mu. History and the new revision commit together.
 func (s *Store) saveArea(a Area, revision int, human string) (Area, error) {
-	if err := s.checkOwnershipText(a.Org, a.Name, a.Intent, a.Summary, a.Source, a.PublicIntent, a.PublicSource); err != nil {
+	a, writes, err := s.prepareArea(a, revision, human)
+	if err != nil {
 		return Area{}, err
 	}
+	return a, s.Batch(writes...)
+}
+
+func (s *Store) prepareArea(a Area, revision int, human string) (Area, []Write, error) {
+	if err := s.checkOwnershipText(a.Org, a.Name, a.Intent, a.Summary, a.Source, a.PublicIntent, a.PublicSource); err != nil {
+		return Area{}, nil, err
+	}
 	if !validCompletionMode(a.CompletionMode) {
-		return Area{}, fmt.Errorf("choose reviewed or routine completion")
+		return Area{}, nil, fmt.Errorf("choose reviewed or routine completion")
 	}
 	if a.ID == "" && len(list[Area](s, "area", a.Org)) >= 32 {
-		return Area{}, fmt.Errorf("initial area limit reached (32 per organization)")
+		return Area{}, nil, fmt.Errorf("initial area limit reached (32 per organization)")
 	}
 	var old Area
 	if a.ID != "" {
 		if s.Get(a.ID, &old) != nil || old.Org != a.Org {
-			return Area{}, fmt.Errorf("area unavailable")
+			return Area{}, nil, fmt.Errorf("area unavailable")
 		}
 		if old.Revision != revision {
-			return Area{}, fmt.Errorf("area changed; inspect revision %d before editing", old.Revision)
+			return Area{}, nil, fmt.Errorf("area changed; inspect revision %d before editing", old.Revision)
 		}
 	} else if revision != 0 {
-		return Area{}, fmt.Errorf("new area requires revision 0")
+		return Area{}, nil, fmt.Errorf("new area requires revision 0")
 	}
 	if a.UnderstandingKind != "" && a.UnderstandingKind != "observed" && a.UnderstandingKind != "inferred" {
-		return Area{}, fmt.Errorf("understanding must be observed or inferred")
+		return Area{}, nil, fmt.Errorf("understanding must be observed or inferred")
 	}
 	if !observationTime(a.ObservedAt) || (a.UnderstandingKind == "observed" && a.ObservedAt == "") {
-		return Area{}, fmt.Errorf("supply a past RFC3339 observation time")
+		return Area{}, nil, fmt.Errorf("supply a past RFC3339 observation time")
 	}
 	if a.PublicSource != "" && !evidenceReference(a.PublicSource) {
-		return Area{}, fmt.Errorf("public source must be a credential-free reference")
+		return Area{}, nil, fmt.Errorf("public source must be a credential-free reference")
 	}
 	var owner Agent
 	if s.Get(a.Owner, &owner) != nil || owner.Org != a.Org {
-		return Area{}, fmt.Errorf("choose a permanent owner in this organization")
+		return Area{}, nil, fmt.Errorf("choose a permanent owner in this organization")
 	}
 	if !boundedText(a.Name, 200) || !boundedText(a.Intent, 6000) || len(a.Summary) > 6000 || len(a.Source) > 2000 || len(a.PublicIntent) > 6000 {
-		return Area{}, fmt.Errorf("provide bounded area name, intent, understanding and source")
+		return Area{}, nil, fmt.Errorf("provide bounded area name, intent, understanding and source")
 	}
 	if old.ID != "" && old.Owner != a.Owner {
 		for _, o := range list[Obligation](s, "obligation", a.Org) {
 			if o.Area == a.ID && o.State != "resolved" && o.State != "cancelled" {
-				return Area{}, fmt.Errorf("resolve or transfer outstanding obligations before changing the owner")
+				return Area{}, nil, fmt.Errorf("resolve or transfer outstanding obligations before changing the owner")
 			}
 		}
 	}
@@ -147,7 +155,7 @@ func (s *Store) saveArea(a Area, revision int, human string) (Area, error) {
 			writes = append(writes, Write{"area-note", a.Org, a.ID, n.State, n.ID, n})
 		}
 	}
-	return a, s.Batch(writes...)
+	return a, writes, nil
 }
 
 func (e *Engine) ownerContext(r Run) map[string]any {

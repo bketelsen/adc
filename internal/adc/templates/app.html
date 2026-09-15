@@ -45,6 +45,7 @@
 <p class="decision-brief">{{.BriefText}}</p>
 {{if .Action}}<div class="decision-effect"><strong>Approval sends the action to the assigned worker for execution.</strong><p>{{.Action.Action}} · {{.Action.Target}}</p><p class="help">The agent verifies the outcome and records it. You do not need to run the commands.</p></div>{{end}}
 {{if .Acceptance}}<div class="decision-effect"><strong>Approval records acceptance for {{.Acceptance.StepTitle}}.</strong><p>{{.Acceptance.Requirement.Criteria}}</p><small>Target: {{.Acceptance.Requirement.Target}}</small><p class="help">Records this acceptance and resumes the step; checks and independent review still apply.</p></div>{{end}}
+{{if .ProposedArea}}<div class="decision-effect"><strong>{{.ProposedArea.Name}}</strong><p>Owner: {{agentname $.Agents .ProposedArea.Owner}} · Completion: {{.ProposedArea.CompletionMode}}</p><p class="help">Approve creates this area. It grants no access and starts no discovery or scheduled work.</p></div>{{end}}
 {{if .Proposal}}<p class="help">Approve creates the proposed permanent team and missing category defaults.</p>{{end}}
 {{if .Document}}<a class="text-link" href="/task?org={{.Org}}&id={{.Task}}&doc={{.Document}}">Read the workspace proposal →</a>{{end}}
 <details class="decision-rationale" id="decision-rationale-{{.ID}}" data-preserve-attr="open"><summary>Full request and evidence</summary><div class="decision-markdown">{{markdown .Question}}</div>
@@ -55,7 +56,7 @@
 <form id="decision-form-{{.ID}}" data-decision-form method="post" action="/decision?org={{.Org}}">
 <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="task" value="{{.Task}}"><input type="hidden" name="decision" value="{{.ID}}"><input type="hidden" name="return" value="/task?org={{.Org}}&id={{.Task}}#decisionlist">
 <details class="decision-notes" id="decision-notes-{{.ID}}" data-preserve-attr="open"><summary>Add notes</summary><label>Notes<textarea name="answer" rows="2" placeholder="Add a condition, correction, or reason…"></textarea></label></details>
-{{if and (not .Proposal) (not .Acceptance)}}<details id="decision-publication-{{.ID}}" data-preserve-attr="open"><summary>Draft PR authorization</summary><label class="check"><input type="checkbox" name="publish">Also authorize preparing the external draft PR if I approve</label></details>{{end}}
+{{if and (not .Proposal) (not .Acceptance) (not .ProposedArea)}}<details id="decision-publication-{{.ID}}" data-preserve-attr="open"><summary>Draft PR authorization</summary><label class="check"><input type="checkbox" name="publish">Also authorize preparing the external draft PR if I approve</label></details>{{end}}
 <div class="decision-actions"><button class="primary" name="outcome" value="approve">Approve</button><button name="outcome" value="reject">Reject</button><button name="outcome" value="refine">Refine with notes</button></div>
 </form>{{end}}</article>{{end}}{{end}}</section>{{end}}
 
