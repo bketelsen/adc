@@ -747,6 +747,24 @@ func (w *Web) action(r *http.Request, p Page) error {
 			}
 			return nil
 		}
+		if r.URL.Path == "/steer" && strings.TrimSpace(f("message")) != "" {
+			// A reply typed under a pending decision answers that decision.
+			id := f("run")
+			if id == "" {
+				for _, rr := range taskRuns(s, t.ID) {
+					if rr.Parent == "" {
+						id = rr.ID
+						break
+					}
+				}
+			}
+			if d, ok := pendingRunDecision(s, t.ID, id); ok && d.Acceptance == nil {
+				r.Form.Set("decision", d.ID)
+				r.Form.Set("outcome", plainOutcome(f("message"), d))
+				r.Form.Set("answer", f("message"))
+				r.URL.Path = "/decision"
+			}
+		}
 		if r.URL.Path == "/decision" {
 			var d Decision
 			if s.Get(f("decision"), &d) != nil || d.Task != t.ID || d.Org != t.Org || d.State != "pending" {
@@ -802,10 +820,18 @@ func (w *Web) action(r *http.Request, p Page) error {
 				}
 				d.CreatedSteward = agent.ID
 				run.State = "complete"
+				run.Error = ""
 				run.Result = "Human approved and created the steward: " + agent.Name
 				t.State = "ready"
 				t.Output = run.Result
 				writes = append(writes, stewardWrites...)
+				// The conversation is over; a blocker it raised meanwhile is moot.
+				for _, other := range taskDecisions(s, t.ID) {
+					if other.ID != d.ID && other.State == "pending" && other.Run == run.ID && other.Kind != "permission" {
+						other.State = "cancelled"
+						writes = append(writes, Write{"decision", other.Org, other.Task, other.State, other.ID, other})
+					}
+				}
 				writes = append(writes, Write{"decision", d.Org, d.Task, d.State, d.ID, d}, Write{"run", run.Org, run.Task, run.State, run.ID, run}, Write{"assignment", t.Org, "", t.State, t.ID, t})
 				decisionLog = p.User.Name + " approved the steward: " + agent.Name
 				if err := commitResponse(writes); err != nil {

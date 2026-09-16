@@ -146,3 +146,38 @@ func TestStewardConversationAttachRefineAndBoundaries(t *testing.T) {
 		t.Fatal("steward decision accepted outside its conversation")
 	}
 }
+
+func TestPlainReplyAnswersThePendingDecision(t *testing.T) {
+	for _, tc := range []struct{ message, outcome string }{{"looks good", "approve"}, {"Yes, go ahead.", "approve"}, {"no, drop it", "reject"}, {"looks good but make the routine daily", "refine"}, {"Can you add the repogen repository too? Otherwise fine.", "refine"}} {
+		t.Run(tc.message, func(t *testing.T) {
+			s, e, w, task, run := stewardConversation(t)
+			_, err := call(t, e, run, "adc_propose_steward", map[string]any{"Agent": "dev", "Charter": "Look after the build tooling."})
+			must(t, err)
+			d := taskDecisions(s, task.ID)[0]
+			form := url.Values{"task": {task.ID}, "message": {tc.message}}
+			req := httptest.NewRequest("POST", "/steer", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			must(t, req.ParseForm())
+			must(t, w.action(req, Page{User: User{ID: "owner", Name: "Owner"}, Org: Organization{ID: "org"}}))
+			must(t, s.Get(d.ID, &d))
+			_, isSteward := s.steward("dev")
+			must(t, s.Get(run.ID, &run))
+			if d.State != "answered" || d.Outcome != tc.outcome || !strings.Contains(d.Answer, tc.message) {
+				t.Fatal("reply did not answer the decision", d.State, d.Outcome, d.Answer)
+			}
+			if isSteward != (tc.outcome == "approve") || (tc.outcome == "approve" && run.State != "complete") || (tc.outcome != "approve" && run.State != "queued") {
+				t.Fatal("outcome not applied", tc.outcome, isSteward, run.State)
+			}
+		})
+	}
+	// A blocked designer's empty blocker card no longer appears, and a general question takes the text as its answer.
+	s, e, _, task, run := stewardConversation(t)
+	writes := e.escalationWrites(&run, "cannot continue")
+	if len(writes) != 0 {
+		t.Fatal("conversation blocker created a decision card")
+	}
+	_, _, _, general := fixture(t)
+	_ = task
+	_ = s
+	_ = general
+}

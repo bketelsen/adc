@@ -36,6 +36,12 @@ func (e *Engine) escalationWrites(r *Run, reason string) []Write {
 			return []Write{{"run", parent.Org, parent.Task, parent.State, parent.ID, parent}}
 		}
 	}
+	var task Assignment
+	if s.Get(r.Task, &task) == nil && task.Kind == "proposal" {
+		// A conversation that cannot proceed says so in its own transcript; the
+		// human answers or refines the pending proposal rather than a new card.
+		return nil
+	}
 	d := Decision{ID: ID(), Org: r.Org, Task: r.Task, Run: r.ID, State: "pending", Kind: "blocker", Question: reason}
 	return []Write{{"decision", d.Org, d.Task, d.State, d.ID, d}}
 }
