@@ -18,7 +18,6 @@ import (
 
 func serve() error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
-	publicContributions := flags.Bool("public-contributions", false, "enable deliberately public contribution queue endpoints")
 	addr := flags.String("addr", "127.0.0.1:8789", "HTTP listen address")
 	dir := flags.String("data", ".adc", "Private application data directory")
 	secure := flags.Bool("secure-cookies", false, "Use with an HTTPS reverse proxy")
@@ -49,7 +48,6 @@ func serve() error {
 	engine.Start(ctx)
 	defer engine.Stop()
 	web := adc.NewWeb(store, engine, *secure)
-	web.PublicContributions = *publicContributions
 	server := &http.Server{Handler: web.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		<-ctx.Done()

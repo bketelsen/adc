@@ -18,10 +18,6 @@ func (e *Engine) escalationWrites(r *Run, reason string) []Write {
 	r.State = "blocked"
 	r.Error = reason
 	s := e.Store
-	var sourceTask Assignment
-	if s.Get(r.Task, &sourceTask) == nil && sourceTask.Kind == "contribution-review" {
-		return nil
-	} // Receiving owner recovers; no routine human continuation.
 	if r.Parent != "" {
 		var parent Run
 		if s.Get(r.Parent, &parent) == nil {

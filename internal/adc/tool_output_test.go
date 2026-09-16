@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 	"unicode/utf8"
 )
 
@@ -24,22 +23,6 @@ func TestInlineOutputPreservesStatusAndMarksIncompleteEvidence(t *testing.T) {
 	small := workspaceResult{Output: "ok", ExitCode: 0}
 	if inlineWorkspaceResult(small) != small || inlineToolText("ok") != "ok" {
 		t.Fatal("ordinary results changed")
-	}
-}
-
-func TestAdmissionTruncatedInlineOutputDoesNotVerify(t *testing.T) {
-	s, e, _, p, _ := contributionFixture(t)
-	c, _ := submitFixture(t, s, p)
-	e.dispatchContributions(time.Now())
-	must(t, s.Get(c.ID, &c))
-	var r Run
-	must(t, s.Get(c.Run, &r))
-	setRunning(t, s, &r)
-	_, err := call(t, e, r, "adc_candidate_check", map[string]any{"Command": "python3 -I -c 'print(\"x\" * 30000)'"})
-	must(t, err)
-	must(t, s.Get(c.ID, &c))
-	if c.Verified {
-		t.Fatal("partial inline output counted as complete validation")
 	}
 }
 

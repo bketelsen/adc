@@ -14,7 +14,7 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 	tools := e.tools(r, contexts...)
 	var task Assignment
 	_ = e.Store.Get(r.Task, &task)
-	if r.Execution == "protected" && task.Kind != "proposal" && task.Kind != "contribution-review" {
+	if r.Execution == "protected" && task.Kind != "proposal" {
 		ctx := context.Background()
 		if len(contexts) > 0 {
 			ctx = contexts[0]
@@ -32,7 +32,7 @@ func (e *Engine) providerTools(r Run, redact Redactor, outcome func(string), con
 				return copilot.ToolResult{ResultType: "failure", TextResultForLLM: message, Error: message}, nil
 			}
 			switch name {
-			case "adc_wait", "adc_wait_contribution":
+			case "adc_wait":
 				var current Run
 				if e.Store.Get(r.ID, &current) == nil && current.State != "running" {
 					outcome(inv.ToolCallID)

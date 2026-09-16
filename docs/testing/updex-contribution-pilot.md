@@ -1,5 +1,7 @@
 # Updex contribution pilot — September 14, 2026
 
+Historical record. The public contribution queue and admission feature this pilot exercised was removed from ADC on September 15, 2026; the delivered draft PR and its findings stand on their own.
+
 Status: real-source, real-provider pilot passed. Brian authorized publication and [draft PR #417](https://github.com/frostyard/updex/pull/417) is open. No merge or release occurred. The pilot used a separate ADC qualification database and a loopback HTTP listener; it did not manufacture production organization activity or expose the live server publicly.
 
 ## Useful deliverable

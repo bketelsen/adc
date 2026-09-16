@@ -148,8 +148,6 @@ func (e *Engine) tick(ctx context.Context) {
 	s := e.Store
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e.dispatchContributions(time.Now().UTC())
-	e.wakeContributors(time.Now().UTC())
 	e.dispatchObligations(time.Now().UTC())
 	e.boundDiscovery()
 	e.boundAttentionCycles(time.Now().UTC())
@@ -307,11 +305,7 @@ func (e *Engine) tick(ctx context.Context) {
 				continue
 			}
 			counts[a.ID]++
-			runTimeout := 30 * time.Minute
-			if t.Kind == "contribution-review" {
-				runTimeout = 3 * time.Minute
-			}
-			runCtx, cancel := context.WithTimeout(ctx, runTimeout)
+			runCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 			e.mu.Lock()
 			e.active[r.ID] = cancel
 			e.mu.Unlock()
@@ -498,15 +492,6 @@ func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 		r.ReviewStage = current.ReviewStage
 	}
 	b, _ := json.Marshal(e.activationContext(r, t, models, catalogs, catalogErrors))
-	if t.Kind == "contribution-review" {
-		p, c, admissionErr := e.admissionContext(r)
-		if admissionErr != nil {
-			s.mu.Unlock()
-			fail(admissionErr)
-			return
-		}
-		system, b = contributionPrompt(p, c)
-	}
 	s.mu.Unlock()
 	if providerName(a.Provider) == "selfhosted" {
 		if err := e.executeSelfhosted(ctx, r, t, a, system, b, redact); err != nil {
@@ -597,9 +582,6 @@ func (e *Engine) completeActivation(r Run) {
 	current.Attempts = 0
 	var activationTask Assignment
 	_ = s.Get(current.Task, &activationTask)
-	if activationTask.Kind == "contribution-review" && current.State == "complete" {
-		return
-	}
 	if e.resumeForUpdates(&current) {
 		current.Steering = false
 		current.State = "queued"
@@ -778,9 +760,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	}
 	var scopedTask Assignment
 	_ = s.Get(original.Task, &scopedTask)
-	if scopedTask.Kind == "contribution-review" {
-		return e.contributionReviewTools(ctx, original)
-	}
 	active := func() (Run, error) {
 		var r Run
 		err := s.Get(original.ID, &r)
@@ -1351,7 +1330,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.attentionTools(original)...)
 	tools = append(tools, e.completionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
-	tools = append(tools, e.contributionOwnerTools(original)...)
 	// Offer each tool only to the runs that can use it: plan authoring to the
 	// supervisor, plan-step evidence to planned workers, reassignment to runs
 	// that delegated. Fewer schemas per activation and fewer wrong turns.
