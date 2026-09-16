@@ -49,7 +49,6 @@ func (e *Engine) activationContext(r Run, t Assignment, models []Model, catalogs
 	coordination := e.requestContext(r)
 	delete(coordination, "guidance")
 	ctx["owner_coordination"] = coordination
-	ctx["observation"] = e.obligationObservation(r)
 	return ctx
 }
 

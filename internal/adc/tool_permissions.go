@@ -247,9 +247,6 @@ func (s *Store) authorizeGatewayRun(run Run, tool GatewayTool, operation string,
 	if s.Get(run.Task, &task) != nil || task.Org != run.Org || task.State == "paused" || task.State == "cancelled" {
 		return Run{}, fmt.Errorf("assignment is unavailable")
 	}
-	if reason := s.obligationRunProblem(task); reason != "" {
-		return Run{}, fmt.Errorf("%s", reason)
-	}
 	var policy ToolPolicy
 	if s.Get("policy-"+tool.ID, &policy) != nil || policy.Org != run.Org || policy.Fingerprint != tool.Fingerprint || policy.Mode == "deny" {
 		return Run{}, fmt.Errorf("tool needs current human classification or is denied")

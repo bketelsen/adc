@@ -20,7 +20,6 @@ func TestBrowserOwnership(t *testing.T) {
 	a.Source = "fixture://initial"
 	a, err = s.saveArea(a, a.Revision, "run:"+r.ID)
 	must(t, err)
-	o := createFollowup(t, e, r, followupArgs(a))
 	server := httptest.NewServer(NewWeb(s, e, false).Handler())
 	defer server.Close()
 	script, err := filepath.Abs("testdata/browser/ownership.cjs")
@@ -28,10 +27,6 @@ func TestBrowserOwnership(t *testing.T) {
 	out, err := exec.Command(node, script, server.URL).CombinedOutput()
 	t.Log(string(out))
 	must(t, err)
-	must(t, s.Get(o.ID, &o))
-	if o.State != "cancelled" {
-		t.Fatal("browser did not cancel obligation")
-	}
 	must(t, s.Get(a.ID, &a))
 	notes := s.areaKnowledge(a).Notes
 	found := false

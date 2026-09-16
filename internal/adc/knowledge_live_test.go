@@ -71,7 +71,7 @@ func TestLiveKnowledgeDiscovery(t *testing.T) {
 			if len(taskReviews(s, d.ID)) == 0 {
 				t.Fatal("missing independent review")
 			}
-			if len(list[StandingSchedule](s, "schedule", task.Org)) != 0 || len(list[Obligation](s, "obligation", task.Org)) != 0 {
+			if len(list[StandingSchedule](s, "schedule", task.Org)) != 0 {
 				t.Fatal("discovery manufactured work")
 			}
 			for _, trace := range taskTraces(s, d.ID) {
@@ -147,9 +147,6 @@ func TestLiveKnowledgeSourcePilots(t *testing.T) {
 					must(t, s.Get(a.ID, &a))
 					if !strings.Contains(strings.ToLower(a.Summary), tc.needle) || a.Source == "" || len(taskReviews(s, d.ID)) == 0 {
 						t.Fatal("missing retained source understanding or review")
-					}
-					if len(list[Obligation](s, "obligation", a.Org)) != 0 {
-						t.Fatal("pilot created unsolicited follow-up")
 					}
 					for _, trace := range taskTraces(s, d.ID) {
 						if trace.State == "failed" {

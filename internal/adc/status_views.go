@@ -86,7 +86,7 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 				decisions = append(decisions, map[string]any{"id": d.ID, "brief": d.BriefText(), "state": d.State})
 			}
 		}
-		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "completion_evidence": e.completionEvidence(r), "observation": e.obligationObservation(r), "guidance": "For exact run results use View run with ID; use review, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
+		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "completion_evidence": e.completionEvidence(r), "guidance": "For exact run results use View run with ID; use review, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
 	default:
 		return nil, fmt.Errorf("View must be areas, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review (optional ID for one exact review), connections, proposals or documents; omit for the full snapshot")
 	}

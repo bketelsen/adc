@@ -31,7 +31,6 @@ type Page struct {
 	Coordination                                                OwnerRequestPage
 	AreaKnowledge                                               []AreaKnowledge
 	Areas                                                       []Area
-	Obligations                                                 []Obligation
 	Connection                                                  ConnectionPage
 	Selfhosted                                                  SelfhostedAccountPage
 	Plan                                                        ExecutionPlan
@@ -291,7 +290,6 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 			}
 			p.AreaKnowledge = append(p.AreaKnowledge, k)
 		}
-		p.Obligations = list[Obligation](w.Store, "obligation", orgID)
 	case "/live-work":
 		w.liveWork(rw, r, p)
 		return
@@ -725,9 +723,6 @@ func (w *Web) action(r *http.Request, p Page) error {
 				}
 				if !w.Engine.withinBudget(t) {
 					return errors.New("This task spent its shared activation budget; reassess its scope before starting further work")
-				}
-				if reason := s.obligationRunProblem(t); reason != "" {
-					return errors.New(reason + "; reassess the retained obligation before resuming")
 				}
 				t.State = "queued"
 				return s.Put("assignment", t.Org, "", t.State, t.ID, t)

@@ -122,7 +122,7 @@ func (e *Engine) receivingRun(org, agent string) (Run, bool) {
 			continue
 		}
 		var t Assignment
-		if e.Store.Get(r.Task, &t) != nil || t.Org != org || t.Kind == "proposal" || t.State == "paused" || t.State == "cancelled" || t.State == "ready" || pendingDecision(e.Store, t.ID, r.ID) || e.Store.obligationRunProblem(t) != "" {
+		if e.Store.Get(r.Task, &t) != nil || t.Org != org || t.Kind == "proposal" || t.State == "paused" || t.State == "cancelled" || t.State == "ready" || pendingDecision(e.Store, t.ID, r.ID) {
 			continue
 		}
 		if r.State != "running" && !e.withinBudget(t) {
@@ -281,9 +281,6 @@ func (e *Engine) ownerRequestTools(original Run) []copilot.Tool {
 		var t Assignment
 		if s.Get(original.ID, &r) != nil || r.State != "running" || r.Superseded || s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
 			return r, fmt.Errorf("run is not active")
-		}
-		if reason := s.obligationRunProblem(t); reason != "" {
-			return r, fmt.Errorf("%s", reason)
 		}
 		return r, nil
 	}

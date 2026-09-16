@@ -22,7 +22,6 @@ type Assignment struct {
 	AreaCreation                                                            bool
 	Completion                                                              *CompletionPolicy
 	Area                                                                    string
-	Obligation                                                              string
 	ConstrainCapabilities                                                   bool
 	Execution                                                               string
 	Capabilities                                                            []CapabilityGrant

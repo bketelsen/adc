@@ -63,7 +63,7 @@ func TestAreaConversationApprovalRefinementAndNoExecution(t *testing.T) {
 	}
 	must(t, s.Get(task.ID, &task))
 	must(t, s.Get(root.ID, &root))
-	if task.State != "ready" || root.State != "complete" || len(taskRuns(s, task.ID)) != 1 || len(list[Obligation](s, "obligation", task.Org)) != 0 {
+	if task.State != "ready" || root.State != "complete" || len(taskRuns(s, task.ID)) != 1 {
 		t.Fatal("area creation started work")
 	}
 }

@@ -46,7 +46,7 @@ func routineCompletion(t Assignment) bool {
 func (s *Store) snapshotCompletion(t *Assignment) error {
 	if t.Completion == nil {
 		p := CompletionPolicy{Mode: "routine", Version: 1}
-		if t.Area != "" && t.Obligation == "" && t.Schedule == "" {
+		if t.Area != "" && t.Schedule == "" {
 			var a Area
 			if s.Get(t.Area, &a) != nil || a.Org != t.Org {
 				return fmt.Errorf("select an area in this organization")
@@ -66,7 +66,7 @@ func (e *Engine) requiresIndependentReview(t Assignment, r Run) bool {
 	if routineCompletion(t) {
 		return false
 	}
-	if len(r.Code) > 0 || e.completionEvidence(r).ID != "" || r.Category == "implementation" || e.obligationObservation(r).ID != "" {
+	if len(r.Code) > 0 || e.completionEvidence(r).ID != "" || r.Category == "implementation" {
 		return true
 	}
 	for _, d := range taskDocs(e.Store, t.ID) {
@@ -128,7 +128,7 @@ func (e *Engine) routineEvidenceComplete(t Assignment) bool {
 		if r.Superseded || r.ReviewOf != "" || r.State == "cancelled" || (r.State != "complete" && (r.Parent != "" || r.State != "running")) {
 			continue
 		}
-		if len(r.Code) > 0 || authored[r.ID] || e.completionEvidence(r).ID != "" || e.obligationObservation(r).ID != "" {
+		if len(r.Code) > 0 || authored[r.ID] || e.completionEvidence(r).ID != "" {
 			return true
 		}
 	}
@@ -143,7 +143,7 @@ func (e *Engine) publicationReviewNeeded(t Assignment, r Run) bool {
 }
 func completionInstructions(t Assignment) string {
 	if routineCompletion(t) {
-		text := "\nCOMPLETION POLICY — ROUTINE: Do the work and finish on concrete evidence: registered code (adc_code), a saved document (adc_document) or observed verification (adc_evidence; adc_obligation_result for a linked verification). No independent model review is required for code, documents or plan steps; the human reviews the result. Do small work yourself; delegate when parallelism or a different specialty helps. Optional expert review is available with adc_delegate ReviewOf. A promise, external claim or inability report is not evidence."
+		text := "\nCOMPLETION POLICY — ROUTINE: Do the work and finish on concrete evidence: registered code (adc_code), a saved document (adc_document) or observed verification (adc_evidence). No independent model review is required for code, documents or plan steps; the human reviews the result. Do small work yourself; delegate when parallelism or a different specialty helps. Optional expert review is available with adc_delegate ReviewOf. A promise, external claim or inability report is not evidence."
 		if t.Publication {
 			text += " Draft PR publication is the exception: the exact commit needs one passing cross-family review before ADC delivers it, so arrange that review for the run that registered the code."
 		}
@@ -172,30 +172,6 @@ func (e *Engine) completionTools(original Run) []copilot.Tool {
 		if s.Get(original.ID, &r) != nil || r.State != "running" || r.Superseded || s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
 			return nil, fmt.Errorf("run is not active")
 		}
-		if reason := s.obligationRunProblem(t); reason != "" {
-			return nil, fmt.Errorf("%s", reason)
-		}
 		return e.recordCompletionEvidence(r, p.Summary, p.Reference, p.Revision)
 	})}
 }
-
-// A verification activity can report success or failure, but its concrete
-// observation must exist before completion; a reviewed prose report alone is
-// not the linked obligation's result.
-func (e *Engine) verificationEvidenceComplete(t Assignment) bool {
-	if t.Obligation == "" {
-		return true
-	}
-	for _, r := range taskRuns(e.Store, t.ID) {
-		if r.Superseded || r.ReviewOf != "" || r.State == "cancelled" || (r.State != "complete" && (r.Parent != "" || r.State != "running")) {
-			continue
-		}
-		v := e.obligationObservation(r)
-		if v.ID != "" && v.Obligation == t.Obligation && (!e.requiresIndependentReview(t, r) || e.hasCurrentReview(r, taskReviews(e.Store, t.ID))) {
-			return true
-		}
-	}
-	return false
-}
-
-const verificationInstructions = "\nIf this handoff provides the verification observation, record adc_obligation_result with actual observed facts and a short source reference BEFORE finishing; an ordinary message or document does not persist the linked obligation result. Review this stored observation under the saved completion policy."

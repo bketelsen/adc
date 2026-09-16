@@ -2,8 +2,6 @@ package adc
 
 import (
 	"encoding/json"
-	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +93,7 @@ func TestKnowledgePublicPreviewAndAgentBoundary(t *testing.T) {
 	}
 }
 
-func TestDiscoveryBudgetAndNoRecursiveFollowups(t *testing.T) {
+func TestDiscoveryBudget(t *testing.T) {
 	s, e, task, r, a := ownershipFixture(t)
 	writes, err := e.discoveryWrites(a, Assignment{ID: "discover", Account: task.Account, Creator: task.Creator, Prompt: "Inspect the fixture facts only; leave dormant work alone."})
 	must(t, err)
@@ -110,9 +108,6 @@ func TestDiscoveryBudgetAndNoRecursiveFollowups(t *testing.T) {
 	}
 	current := taskRuns(s, d.ID)[0]
 	setRunning(t, s, &current)
-	if _, err = call(t, e, current, "adc_followup", followupArgs(a)); err == nil {
-		t.Fatal("discovery scheduled new attention")
-	}
 	current.Activations = 24
 	must(t, s.Put("run", current.Org, current.Task, current.State, current.ID, current))
 	if e.withinBudget(d) {
@@ -149,36 +144,6 @@ func TestKnowledgeOpenNotesSurviveAnsweredNoise(t *testing.T) {
 	b, _ := json.Marshal(e.ownerContext(r))
 	if !strings.Contains(string(b), "Material pending correction") || strings.Contains(string(b), "Old answered question") {
 		t.Fatal("answered notes displaced correction", string(b))
-	}
-}
-
-func TestSpentFollowupCannotPretendToResume(t *testing.T) {
-	s, e, task, r, a := ownershipFixture(t)
-	o := createFollowup(t, e, r, followupArgs(a))
-	completeSource(t, s, task, r)
-	e.dispatchObligations(time.Now().Add(2 * time.Hour))
-	must(t, s.Get(o.ID, &o))
-	worker := taskRuns(s, o.Task)[0]
-	worker.Activations = 48
-	must(t, s.Put("run", worker.Org, worker.Task, worker.State, worker.ID, worker))
-	e.dispatchObligations(time.Now().Add(2 * time.Hour))
-	w := NewWeb(s, e, false)
-	values := url.Values{"task": {o.Task}, "action": {"resume"}}
-	req := httptest.NewRequest("POST", "/task-action", strings.NewReader(values.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	must(t, req.ParseForm())
-	err := w.action(req, Page{User: User{ID: task.Creator}, Org: Organization{ID: task.Org}})
-	if err == nil || !strings.Contains(err.Error(), "budget") {
-		t.Fatal("spent follow-up silently resumed", err)
-	}
-	var ft Assignment
-	must(t, s.Get(o.Task, &ft))
-	ft.State = "queued"
-	must(t, s.Put("assignment", ft.Org, "", ft.State, ft.ID, ft))
-	e.boundDiscovery()
-	must(t, s.Get(ft.ID, &ft))
-	if ft.State != "paused" {
-		t.Fatal("legacy resumed task silently stranded")
 	}
 }
 

@@ -153,12 +153,6 @@ func (s *Store) Get(id string, v any) error {
 		allowed = kind == "completion-evidence" || kind == "completion-evidence-history"
 	case *Area:
 		allowed = kind == "area" || kind == "area-history"
-	case *Obligation:
-		allowed = kind == "obligation"
-	case *ObligationFunding:
-		allowed = kind == "obligation-funding"
-	case *ObligationObservation:
-		allowed = kind == "obligation-observation" || kind == "observation-history"
 	case *GatewayTool:
 		allowed = kind == "gateway-tool"
 	case *ToolPolicy:
