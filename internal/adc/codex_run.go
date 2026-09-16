@@ -148,7 +148,7 @@ func (e *Engine) executeRPCProvider(ctx context.Context, r Run, t Assignment, a 
 	e.Store.mu.Unlock()
 	e.Store.Log(r.Org, r.Task, r.ID, "started", r.Title+" · "+r.Model+" · "+c.label)
 	var turn struct{ Turn struct{ ID string } }
-	params := map[string]any{"threadId": id, "input": []map[string]string{{"type": "text", "text": "Continue the authorized assignment from this persisted ADC evidence. Reconcile prior external outcomes before repeating actions.\n" + string(evidence)}}}
+	params := map[string]any{"threadId": id, "input": []map[string]string{{"type": "text", "text": activationLeadIn + string(evidence)}}}
 	if agent.Effort != "" {
 		params["effort"] = agent.Effort
 	}

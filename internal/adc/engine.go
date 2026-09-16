@@ -491,26 +491,8 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 		r.ReviewedRevision = current.ReviewedRevision
 		r.ReviewStage = current.ReviewStage
 	}
-	contextData := map[string]any{"assignment": t, "available_models": models, "available_models_by_provider": catalogs, "provider_catalog_errors": catalogErrors, "run": r, "team": list[Agent](s, "agent", r.Org), "plan": e.inspectPlan(s.taskPlan(r.Task)), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": taskDocs(s, r.Task), "reviews": taskReviews(s, r.Task), "decisions": taskDecisions(s, r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}
-	recent := []ToolTrace{}
-	for _, trace := range taskTraces(s, r.Task) {
-		if trace.Run == r.ID {
-			trace.Arguments = clipped(trace.Arguments, 2000)
-			trace.Result = clipped(trace.Result, 4000)
-			recent = append(recent, trace)
-		}
-		if len(recent) >= 12 {
-			break
-		}
-	}
-	contextData["recent_tool_evidence"] = recent
 	system += completionInstructions(t)
-	contextData["completion_evidence"] = e.completionEvidence(r)
-	contextData["owner"] = e.ownerContext(r)
-	contextData["owner_coordination"] = e.requestContext(r)
-	contextData["assessment"] = e.assessmentContext(t)
-	contextData["observation"] = e.obligationObservation(r)
-	b, _ := json.Marshal(contextData)
+	b, _ := json.Marshal(e.activationContext(r, t, models, catalogs, catalogErrors))
 	if t.Kind == "contribution-review" {
 		p, c, admissionErr := e.admissionContext(r)
 		if admissionErr != nil {
@@ -588,7 +570,7 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 			s.logUsage(t, r, session.SessionID, event.ID, d)
 		}
 	})
-	_, err = session.SendAndWait(turnCtx, copilot.MessageOptions{Prompt: "Your current assignment and persisted evidence follow. Continue the outstanding work, checking external outcomes before repeating any interrupted action.\n" + string(b)})
+	_, err = session.SendAndWait(turnCtx, copilot.MessageOptions{Prompt: activationLeadIn + string(b)})
 	if yielded.Load() {
 		abortCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = session.Abort(abortCtx)

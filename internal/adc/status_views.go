@@ -52,6 +52,14 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		}
 		return target, nil
 	case "review":
+		if p.ID != "" {
+			for _, v := range taskReviews(s, r.Task) {
+				if v.ID == p.ID {
+					return v, nil
+				}
+			}
+			return nil, fmt.Errorf("review unavailable in this assignment")
+		}
 		return e.reviewerBrief(r), nil
 	case "assessment":
 		return e.assessmentContext(task), nil
@@ -82,6 +90,6 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		}
 		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "assessment_available": task.Attention != nil, "completion_evidence": e.completionEvidence(r), "observation": e.obligationObservation(r), "guidance": "For exact run results use View run with ID; use review, assessment, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
 	default:
-		return nil, fmt.Errorf("View must be areas, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review, assessment, connections, proposals or documents; omit for the full snapshot")
+		return nil, fmt.Errorf("View must be areas, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review (optional ID for one exact review), assessment, connections, proposals or documents; omit for the full snapshot")
 	}
 }

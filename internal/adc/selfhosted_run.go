@@ -69,7 +69,7 @@ func (e *Engine) executeSelfhosted(ctx context.Context, r Run, t Assignment, a A
 		byName[tool.Name] = tool
 		specs = append(specs, map[string]any{"type": "function", "function": map[string]any{"name": tool.Name, "description": tool.Description, "parameters": tool.Parameters}})
 	}
-	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: "Continue the authorized assignment from this persisted ADC evidence. Reconcile prior tool/external outcomes before repeating actions. Use ADC outcome tools; do not stop at a promise to act.\n" + string(evidence)}}
+	messages := []chatMessage{{Role: "system", Content: system}, {Role: "user", Content: activationLeadIn + "Use ADC outcome tools; do not stop at a promise to act.\n" + string(evidence)}}
 	seenCalls := map[string]bool{}
 	for round := 0; round < 24; round++ {
 		if err := ctx.Err(); err != nil {
