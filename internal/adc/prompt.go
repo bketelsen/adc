@@ -27,12 +27,15 @@ Finishing: end with an outcome tool, then end your turn. adc_finish records an a
 	if r.Execution == "protected" {
 		system += protectedInstructions
 	}
-	if t.AreaCreation {
-		system += areaCreationInstructions
+	if _, ok := e.Store.steward(r.Agent); ok && r.ReviewOf == "" {
+		system += stewardInstructions
+	}
+	if t.StewardCreation {
+		system += stewardDesignInstructions
 	} else if t.Kind == "proposal" {
 		system += proposalInstructions
 	}
-	if agentKind == "guide" && !t.AreaCreation {
+	if agentKind == "guide" && !t.StewardCreation {
 		system += guideInstructions
 	}
 	system += completionInstructions(t)
@@ -47,7 +50,7 @@ const reviewInstructions = `
 
 Review: you are the independent reviewer of run %s. Inspect the actual deliverable at its exact revision (adc_status View=review, adc_read_document, and adc_checkout_code where available), run the applicable checks, and record your verdict with adc_review. Do not rubber-stamp the author's claims; a changes verdict re-queues the author automatically.`
 
-const areaCreationInstructions = "\n\nThis is an area-creation conversation, not execution work or team creation. Help the human turn their description into one area of responsibility. Ask focused conversational questions only where useful; suggest an existing permanent owner and clear intent, outcomes and boundaries. Use adc_status View=areas to avoid duplicating existing responsibilities and the supplied team to choose an owner. Propose with adc_propose_area when concrete enough for review; use its Replaces field to revise a pending proposal. Approval creates the area; do not invent owner understanding or start discovery, schedules, tools or permanent agents. Answer questions with adc_finish; subsequent human messages continue this conversation. The human reviews this configuration directly, so no QA delegation or document ceremony is needed. You have no external execution or MCP access in this conversation."
+const stewardDesignInstructions = "\n\nThis is a steward conversation, not execution work. Help the human turn their description into one steward: a permanent agent that owns a domain, remembers facts, runs routines and raises signals. Ask only what the description leaves open, in one or two short messages: what the domain covers, what to watch for, which routines make sense and how often, which connections and repositories matter, hard boundaries. Never ask what the human already said. Use adc_status View=stewards to avoid overlap. Propose with adc_propose_steward when concrete enough; use Replaces to revise a pending proposal. Answer questions with adc_finish; later human messages continue this conversation. You have no external execution or MCP access here."
 
 const proposalInstructions = "\n\nThis is a proposal conversation only. Discuss or propose future work, without executing it or obtaining approvals through other tools. You intentionally have no MCP grants in this conversation; in the connections catalog, Granted describes only this restricted run, not permanent role access. Recurrence supports intervals, daily times and weekly times only. Use supplied evidence, adc_status, adc_propose_work to create or revise pending proposals, and adc_finish to answer the human. Finish records discussion only, not execution or acceptance. No independent review is required before human review."
 

@@ -19,9 +19,10 @@ type Agent struct {
 	Tools                                                                     []string
 }
 type Assignment struct {
-	AreaCreation                                                            bool
+	StewardCreation                                                         bool
 	Completion                                                              *CompletionPolicy
-	Area                                                                    string
+	Steward                                                                 string
+	Area                                                                    string `json:",omitempty"` // retired: migrated into Steward
 	ConstrainCapabilities                                                   bool
 	Execution                                                               string
 	Capabilities                                                            []CapabilityGrant
@@ -62,8 +63,8 @@ type Connection struct {
 	Headers                                map[string]string
 }
 type Decision struct {
-	ProposedArea                                      *AreaSpec       `json:",omitempty"`
-	CreatedArea                                       string          `json:",omitempty"`
+	ProposedSteward                                   *StewardSpec    `json:",omitempty"`
+	CreatedSteward                                    string          `json:",omitempty"`
 	Action                                            *DecisionAction `json:",omitempty"`
 	Brief, Outcome, ResolvedBy, ResolvedAt            string
 	Acceptance                                        *DecisionAcceptance `json:",omitempty"`

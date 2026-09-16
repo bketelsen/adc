@@ -13,7 +13,7 @@ func TestBrowserOwnerCoordination(t *testing.T) {
 	if node == "" {
 		t.Skip("set ADC_BROWSER_NODE")
 	}
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	_, err := s.db.Exec("INSERT INTO sessions VALUES(?, 'owner','2099-01-01T00:00:00Z')", digest("coordination-fixture"))
 	must(t, err)

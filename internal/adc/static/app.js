@@ -118,27 +118,4 @@ document.addEventListener('click', event=>{
  if(button)button.form.elements.answer.setCustomValidity('');
 });
 
-// Keep selected owner context attached to its original area and revision.
-(() => {
- let selected;
- document.addEventListener('selectionchange', () => {
-  const s=window.getSelection();
-  if(!s || !s.toString().trim()) return;
-  const node=s.anchorNode?.nodeType===Node.ELEMENT_NODE?s.anchorNode:s.anchorNode?.parentElement;
-  const article=node?.closest('.area-prose');
-  if(!article || !article.contains(s.focusNode)) return;
-  selected={area:article.dataset.area,revision:article.dataset.revision,text:s.toString().slice(0,3000)};
-  document.querySelectorAll('.area-selection').forEach(b=>b.hidden=b.dataset.area!==selected.area);
- });
- document.addEventListener('click',e=>{
-  const b=e.target.closest('.area-selection');
-  if(!b || !selected || b.dataset.area!==selected.area)return;
-  const d=document.getElementById('discuss-area-'+selected.area);
-  if(!d)return;
-  d.open=true;
-  d.querySelector('[name=selection]').value=selected.text;
-  d.querySelector('[name=revision]').value=selected.revision;
-  d.querySelector('[name=message]').focus();
-  b.hidden=true;
- });
-})();
+document.querySelectorAll('dialog[data-auto-open]').forEach(d=>{try{d.showModal()}catch(e){}});

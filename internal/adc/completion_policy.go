@@ -46,13 +46,13 @@ func routineCompletion(t Assignment) bool {
 func (s *Store) snapshotCompletion(t *Assignment) error {
 	if t.Completion == nil {
 		p := CompletionPolicy{Mode: "routine", Version: 1}
-		if t.Area != "" && t.Schedule == "" {
-			var a Area
-			if s.Get(t.Area, &a) != nil || a.Org != t.Org {
-				return fmt.Errorf("select an area in this organization")
+		if t.Steward != "" && t.Schedule == "" {
+			v, ok := s.steward(t.Steward)
+			if !ok || v.Org != t.Org {
+				return fmt.Errorf("choose a steward in this organization")
 			}
-			if a.CompletionMode != "" {
-				p.Mode = a.CompletionMode
+			if v.CompletionMode != "" {
+				p.Mode = v.CompletionMode
 			}
 		}
 		t.Completion = &p

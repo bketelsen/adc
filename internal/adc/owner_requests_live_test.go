@@ -19,7 +19,7 @@ func TestLiveOwnerCoordination(t *testing.T) {
 	if os.Getenv("ADC_LIVE_OWNER_COORDINATION") != "1" {
 		t.Skip("set ADC_LIVE_OWNER_COORDINATION")
 	}
-	s, e, task, r, _ := ownershipFixture(t)
+	s, e, task, r, _ := stewardFixture(t)
 	defer e.Stop()
 	for _, agent := range list[Agent](s, "agent", task.Org) {
 		agent.Tools = nil

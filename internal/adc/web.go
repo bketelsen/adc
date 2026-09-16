@@ -29,8 +29,9 @@ var assets embed.FS
 type User struct{ ID, Name, Username string }
 type Page struct {
 	Coordination                                                OwnerRequestPage
-	AreaKnowledge                                               []AreaKnowledge
-	Areas                                                       []Area
+	Stewards                                                    []StewardView
+	Signals                                                     []Signal
+	Assign                                                      string
 	Connection                                                  ConnectionPage
 	Selfhosted                                                  SelfhostedAccountPage
 	Plan                                                        ExecutionPlan
@@ -90,7 +91,21 @@ func NewWeb(s *Store, e *Engine, secure bool) *Web {
 			return string(r[:n-1]) + "…"
 		}
 		return s
-	}, "agentRunView": func(a Agent, runs []Run) AgentRunView { return AgentRunView{Agent: a, Runs: runs} }, "permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "agentname": func(agents []Agent, id string) string {
+	}, "agentRunView": func(a Agent, runs []Run) AgentRunView { return AgentRunView{Agent: a, Runs: runs} }, "permissionConstraints": func(v []ArgumentConstraint) string { b, _ := json.MarshalIndent(v, "", "  "); return string(b) }, "provider": providerName, "previous": func(n int) int { return n - 1 }, "schedulewhen": scheduleWhen, "schedulehistory": scheduleHistory, "activity": activityItems, "stewarded": func(views []StewardView, id string) bool {
+		for _, v := range views {
+			if v.Agent.ID == id {
+				return true
+			}
+		}
+		return false
+	}, "connectionname": func(connections []Connection, id string) string {
+		for _, c := range connections {
+			if c.ID == id {
+				return c.Name
+			}
+		}
+		return id
+	}, "agentname": func(agents []Agent, id string) string {
 		for _, a := range agents {
 			if a.ID == id {
 				return a.Name
@@ -258,7 +273,8 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.Defaults[d.Category] = d.Agent
 	}
 	p.Tasks = list[Assignment](w.Store, "assignment", orgID)
-	p.Areas = list[Area](w.Store, "area", orgID)
+	p.Signals = w.Store.openSignals(orgID, time.Now())
+	p.Assign = r.URL.Query().Get("assign")
 	p.Decisions = pendingOrganizationDecisions(w.Store, orgID)
 	p.ProposalCount = pendingProposals(w.Store, orgID)
 	p.Connections = list[Connection](w.Store, "connection", orgID)
@@ -271,27 +287,14 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	case "/":
 	case "/coordination":
 		w.ownerRequestPage(r, &p)
-	case "/areas":
-		p.View, p.Title = "areas", "Areas of responsibility"
-		p.Areas = list[Area](w.Store, "area", orgID)
-		for _, a := range p.Areas {
-			k := w.Store.areaKnowledge(a)
-			records, _ := w.Store.Records("area-history", a.Org)
-			for _, record := range records {
-				if record.Parent == a.ID {
-					var old Area
-					if w.Store.Get(record.ID, &old) == nil {
-						k.History = append(k.History, old)
-					}
-				}
-			}
-			if len(k.History) > 12 {
-				k.History = k.History[:12]
-			}
-			p.AreaKnowledge = append(p.AreaKnowledge, k)
-		}
 	case "/live-work":
 		w.liveWork(rw, r, p)
+		return
+	case "/stewards":
+		p.View, p.Title = "stewards", "Stewards"
+		p.Stewards = w.stewardViews(orgID)
+	case "/live-stewards":
+		w.liveStewards(rw, r, p)
 		return
 	case "/connection":
 		if err := w.connectionPage(r.URL.Query().Get("id"), &p); err != nil {
@@ -574,8 +577,10 @@ func (w *Web) action(r *http.Request, p Page) error {
 	switch r.URL.Path {
 	case "/owner-request-action":
 		return w.ownerRequestAction(r, p)
-	case "/area-action":
-		return w.areaAction(r, p)
+	case "/steward-action":
+		return w.stewardAction(r, p)
+	case "/signal-action":
+		return w.signalWebAction(r, p)
 	case "/claude-logout":
 		return w.claudeLogout(r, p)
 	case "/codex-login":
@@ -632,8 +637,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 		return SaveAgent(s, a, f("category_default") == "on")
 	case "/connections":
 		return w.saveConnection(r, p.Org.ID)
-	case "/area-proposals":
-		return w.startAreaConversation(r, p)
+	case "/steward-proposals":
+		return w.startStewardConversation(r, p)
 	case "/team-proposals":
 		if f("prompt") == "" || Family(f("model")) == "" {
 			return errors.New("Describe your organization and choose an explicit supervisor model")
@@ -651,7 +656,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if f("title") == "" || f("prompt") == "" {
 			return errors.New("A title and requested outcome are required")
 		}
-		t := Assignment{Area: f("area"), ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")}
+		t := Assignment{ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")}
 		t.Completion = selectedCompletion(f("completion"))
 		return w.Engine.CreateAssignment(t)
 	case "/members":
@@ -721,9 +726,6 @@ func (w *Web) action(r *http.Request, p Page) error {
 				if t.State != "paused" {
 					return errors.New("Only a paused assignment can be resumed")
 				}
-				if !w.Engine.withinBudget(t) {
-					return errors.New("This task spent its shared activation budget; reassess its scope before starting further work")
-				}
 				t.State = "queued"
 				return s.Put("assignment", t.Org, "", t.State, t.ID, t)
 			default:
@@ -790,26 +792,26 @@ func (w *Web) action(r *http.Request, p Page) error {
 					}
 				}
 			}
-			if d.ProposedArea != nil && d.Outcome == "approve" {
-				if !t.AreaCreation || t.Kind != "proposal" {
-					return fmt.Errorf("area proposal conversation required")
+			if d.ProposedSteward != nil && d.Outcome == "approve" {
+				if !t.StewardCreation || t.Kind != "proposal" {
+					return fmt.Errorf("steward conversation required")
 				}
-				area, areaWrites, err := s.prepareProposedArea(t.Org, *d.ProposedArea, "human:"+p.User.ID)
+				agent, stewardWrites, err := w.Engine.approveProposedSteward(t, *d.ProposedSteward, p.User)
 				if err != nil {
 					return err
 				}
-				d.CreatedArea = area.ID
+				d.CreatedSteward = agent.ID
 				run.State = "complete"
-				run.Result = "Human approved and created the area: " + area.Name
+				run.Result = "Human approved and created the steward: " + agent.Name
 				t.State = "ready"
 				t.Output = run.Result
-				writes = append(writes, areaWrites...)
+				writes = append(writes, stewardWrites...)
 				writes = append(writes, Write{"decision", d.Org, d.Task, d.State, d.ID, d}, Write{"run", run.Org, run.Task, run.State, run.ID, run}, Write{"assignment", t.Org, "", t.State, t.ID, t})
-				decisionLog = p.User.Name + " approved the area: " + area.Name
+				decisionLog = p.User.Name + " approved the steward: " + agent.Name
 				if err := commitResponse(writes); err != nil {
 					return err
 				}
-				r.Form.Set("return", "/areas?org="+area.Org+"#area-"+area.ID)
+				r.Form.Set("return", "/stewards?org="+t.Org+"#steward-"+agent.ID)
 				return nil
 			}
 			approveTeam := len(d.Proposal) > 0 && (d.Outcome == "approve" || (d.Outcome == "" && f("approve_team") == "on"))
@@ -1044,6 +1046,7 @@ func (w *Web) liveWork(rw http.ResponseWriter, r *http.Request, p Page) {
 		p.Tasks = list[Assignment](w.Store, "assignment", p.Org.ID)
 		p.Decisions = pendingOrganizationDecisions(w.Store, p.Org.ID)
 		p.ProposalCount = pendingProposals(w.Store, p.Org.ID)
+		p.Signals = w.Store.openSignals(p.Org.ID, time.Now())
 		var b bytes.Buffer
 		if w.templates.ExecuteTemplate(&b, "workboard", p) != nil {
 			return

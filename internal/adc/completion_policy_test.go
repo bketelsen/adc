@@ -9,21 +9,26 @@ import (
 	"testing"
 )
 
-func routineFixture(t *testing.T) (*Store, *Engine, Assignment, Run, Area) {
-	s, e, source, r, a := ownershipFixture(t)
+func routineFixture(t *testing.T) (*Store, *Engine, Assignment, Run, Steward) {
+	s, e, source, r, v := stewardFixture(t)
 	completeSource(t, s, source, r)
-	a.Name = "Family arrangements"
-	a.Intent = "Confirm agreed arrangements with actual evidence; keep any later confirmation owed."
-	a.CompletionMode = "routine"
+	v.Charter = "Confirm agreed family arrangements with actual evidence."
+	v.CompletionMode = "routine"
 	var err error
-	a, err = s.saveArea(a, a.Revision, "human:owner")
+	v, err = s.saveSteward(v, v.Revision, "human:owner")
 	must(t, err)
-	task := Assignment{ID: "family-task", Org: source.Org, Owner: r.Agent, Area: a.ID, Account: source.Account, Creator: source.Creator, Authority: "observe", Title: "Confirm the arrangement", Prompt: "Observe the supplied confirmation; no new action authorized."}
+	task := Assignment{ID: "family-task", Org: source.Org, Owner: r.Agent, Steward: v.Agent, Account: source.Account, Creator: source.Creator, Authority: "observe", Title: "Confirm the arrangement", Prompt: "Observe the supplied confirmation; no new action authorized."}
 	must(t, e.CreateAssignment(task))
 	must(t, s.Get(task.ID, &task))
 	root := taskRuns(s, task.ID)[0]
 	setRunning(t, s, &root)
-	return s, e, task, root, a
+	return s, e, task, root, v
+}
+func completeSource(t *testing.T, s *Store, task Assignment, r Run) {
+	t.Helper()
+	task.State = "ready"
+	r.State = "complete"
+	must(t, s.Batch(Write{"assignment", task.Org, "", task.State, task.ID, task}, Write{"run", r.Org, r.Task, r.State, r.ID, r}))
 }
 func TestRoutineOwnerCompletesOnEvidenceWithoutReviewCeremony(t *testing.T) {
 	s, e, task, root, _ := routineFixture(t)
@@ -41,19 +46,19 @@ func TestRoutineOwnerCompletesOnEvidenceWithoutReviewCeremony(t *testing.T) {
 		t.Fatal("routine work forced artificial QA/delegation")
 	}
 }
-func TestCompletionPolicyFrozenAcrossAreaEdits(t *testing.T) {
-	s, _, task, _, a := routineFixture(t)
-	// A policy change on the area must not reinterpret the existing task.
-	a.CompletionMode = "reviewed"
-	_, err := s.saveArea(a, a.Revision, "human:owner")
+func TestCompletionPolicyFrozenAcrossStewardEdits(t *testing.T) {
+	s, _, task, _, v := routineFixture(t)
+	// A policy change on the steward must not reinterpret the existing task.
+	v.CompletionMode = "reviewed"
+	_, err := s.saveSteward(v, v.Revision, "human:owner")
 	must(t, err)
 	must(t, s.Get(task.ID, &task))
 	if !routineCompletion(task) {
-		t.Fatal("area edit changed an active contract")
+		t.Fatal("steward edit changed an active contract")
 	}
 }
 func TestRoutineIsTheDefaultAndReviewedIsAnOptIn(t *testing.T) {
-	s, e, task, root, a := routineFixture(t)
+	s, e, task, root, v := routineFixture(t)
 	legacy := task
 	legacy.Completion = nil
 	if routineCompletion(legacy) {
@@ -64,18 +69,19 @@ func TestRoutineIsTheDefaultAndReviewedIsAnOptIn(t *testing.T) {
 	if e.requiresIndependentReview(task, code) {
 		t.Fatal("routine mode still forced code review")
 	}
-	// General work with no area and no explicit choice is routine.
-	general := Assignment{ID: "general", Org: task.Org, Owner: root.Agent, Account: task.Account, Creator: task.Creator, Title: "General work", Prompt: "Do it"}
+	// General work with no steward and no explicit choice is routine.
+	general := Assignment{ID: "general", Org: task.Org, Owner: "dev", Account: task.Account, Creator: task.Creator, Title: "General work", Prompt: "Do it"}
 	must(t, e.CreateAssignment(general))
 	must(t, s.Get(general.ID, &general))
-	if !routineCompletion(general) {
+	if !routineCompletion(general) || general.Steward != "" {
 		t.Fatal("general work did not default to routine")
 	}
-	// A human can still choose reviewed, per area or per assignment.
-	a.CompletionMode = "reviewed"
-	_, err := s.saveArea(a, a.Revision, "human:owner")
+	// A human can still choose reviewed, per steward or per assignment.
+	v.CompletionMode = "reviewed"
+	var err error
+	v, err = s.saveSteward(v, v.Revision, "human:owner")
 	must(t, err)
-	next := Assignment{ID: "new-reviewed", Org: task.Org, Owner: root.Agent, Area: a.ID, Account: task.Account, Creator: task.Creator, Title: "New reviewed work", Prompt: "Verify"}
+	next := Assignment{ID: "new-reviewed", Org: task.Org, Owner: v.Agent, Account: task.Account, Creator: task.Creator, Title: "New reviewed work", Prompt: "Verify"}
 	must(t, e.CreateAssignment(next))
 	must(t, s.Get(next.ID, &next))
 	if routineCompletion(next) {
@@ -86,21 +92,17 @@ func TestRoutineIsTheDefaultAndReviewedIsAnOptIn(t *testing.T) {
 	if _, err = call(t, e, nextRun, "adc_finish", map[string]string{"Result": "I say it is done"}); err == nil {
 		t.Fatal("reviewed root bypassed independent review")
 	}
-	explicit := Assignment{ID: "explicit-reviewed", Org: task.Org, Owner: root.Agent, Account: task.Account, Creator: task.Creator, Title: "Explicit", Prompt: "Verify", Completion: selectedCompletion("reviewed")}
+	explicit := Assignment{ID: "explicit-reviewed", Org: task.Org, Owner: "dev", Account: task.Account, Creator: task.Creator, Title: "Explicit", Prompt: "Verify", Completion: selectedCompletion("reviewed")}
 	must(t, e.CreateAssignment(explicit))
 	must(t, s.Get(explicit.ID, &explicit))
 	if routineCompletion(explicit) || selectedCompletion("") != nil {
 		t.Fatal("explicit assignment selection ignored")
 	}
-	// Agents can maintain understanding, never switch the human's completion mode.
-	raw, err := call(t, e, root, "adc_owner", map[string]string{"Area": a.ID})
+	// Agents maintain memory, never the human's completion mode.
+	_, err = call(t, e, root, "adc_remember", map[string]any{"Key": "note", "Value": "Keep observed facts separate from claims.", "Source": "fixture://evidence"})
 	must(t, err)
-	var knowledge AreaKnowledge
-	must(t, json.Unmarshal([]byte(raw), &knowledge))
-	_, err = call(t, e, root, "adc_remember", ownerNoteInput{Area: a.ID, Revision: knowledge.Area.Revision, Summary: "Keep observed facts separate from claims.", Source: "fixture://evidence"})
-	must(t, err)
-	must(t, s.Get(a.ID, &a))
-	if a.CompletionMode != "reviewed" {
+	must(t, s.Get(v.ID, &v))
+	if v.CompletionMode != "reviewed" {
 		t.Fatal("agent altered policy")
 	}
 }
@@ -223,12 +225,12 @@ func passReviewedRun(t *testing.T, e *Engine, r Run) {
 	must(t, e.Store.Put("review", r.Org, r.Task, "pass", rev.ID, rev))
 }
 func TestStandingWorkKeepsTheDefaultPolicy(t *testing.T) {
-	s, e, task, _, a := routineFixture(t)
-	// Standing-work occurrences take the default, never a later area edit.
-	a.CompletionMode = "reviewed"
-	_, err := s.saveArea(a, a.Revision, "human:owner")
+	s, e, task, _, v := routineFixture(t)
+	// Standing-work occurrences take the default, never a later steward edit.
+	v.CompletionMode = "reviewed"
+	_, err := s.saveSteward(v, v.Revision, "human:owner")
 	must(t, err)
-	legacy := Assignment{Org: task.Org, Area: a.ID, Owner: task.Owner, Creator: task.Creator, Account: task.Account, Schedule: "legacy-approved", Title: "Legacy standing check"}
+	legacy := Assignment{Org: task.Org, Steward: v.Agent, Owner: task.Owner, Creator: task.Creator, Account: task.Account, Schedule: "legacy-approved", Title: "Legacy standing check"}
 	writes, err := e.assignmentWrites(legacy)
 	must(t, err)
 	if !routineCompletion(writes[0].Value.(Assignment)) {

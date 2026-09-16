@@ -100,6 +100,7 @@ func (e *Engine) Start(ctx context.Context) {
 		}
 	}
 	e.recoverDeliveryLifecycle()
+	e.migrateAreasToStewards()
 	for _, trace := range list[ToolTrace](s, "tooltrace", "") {
 		if trace.State == "running" {
 			trace.State = "interrupted"
@@ -148,7 +149,6 @@ func (e *Engine) tick(ctx context.Context) {
 	s := e.Store
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e.boundDiscovery()
 	e.dispatchOwnerRequests()
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
@@ -253,9 +253,6 @@ func (e *Engine) tick(ctx context.Context) {
 			}
 			var t Assignment
 			if s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
-				continue
-			}
-			if !e.withinBudget(t) {
 				continue
 			}
 			a, accountErr := s.runAccount(t, r)
@@ -510,8 +507,8 @@ func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 	if t.Kind == "proposal" {
 		config.ExcludedTools = nil
 		config.AvailableTools = []string{"adc_status", "adc_read_document", "adc_propose_work", "adc_finish", "adc_blocked"}
-		if t.AreaCreation {
-			config.AvailableTools = []string{"adc_status", "adc_read_document", "adc_propose_area", "adc_finish", "adc_blocked"}
+		if t.StewardCreation {
+			config.AvailableTools = []string{"adc_status", "adc_read_document", "adc_propose_steward", "adc_finish", "adc_blocked"}
 		}
 	}
 	if r.Execution == "protected" {
@@ -654,6 +651,16 @@ func (e *Engine) CreateAssignment(t Assignment) error {
 
 func (e *Engine) assignmentWrites(t Assignment, bootstrap ...Agent) ([]Write, error) {
 	s := e.Store
+	// Work handed to a steward is that steward's work; its charter, facts and
+	// completion default travel with the assignment.
+	if t.Steward != "" && t.Owner == "" {
+		t.Owner = t.Steward
+	}
+	if t.Steward == "" && t.Kind != "proposal" {
+		if _, ok := s.steward(t.Owner); ok {
+			t.Steward = t.Owner
+		}
+	}
 	if err := s.snapshotCompletion(&t); err != nil {
 		return nil, err
 	}
@@ -842,7 +849,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"completion_evidence": e.completionEvidence(r), "completion_policy": completionPolicy(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"completion_evidence": e.completionEvidence(r), "completion_policy": completionPolicy(task), "owner_coordination": e.requestContext(r), "steward": e.stewardContext(r.Agent, true), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -1247,10 +1254,10 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	_ = s.Get(original.Task, &task)
 	if task.Kind == "proposal" {
 		allowed := map[string]bool{"adc_status": true, "adc_read_document": true, "adc_propose_work": true, "adc_finish": true, "adc_blocked": true}
-		if task.AreaCreation {
+		if task.StewardCreation {
 			delete(allowed, "adc_propose_work")
-			allowed["adc_propose_area"] = true
-			tools = append(tools, e.areaProposalTool(original))
+			allowed["adc_propose_steward"] = true
+			tools = append(tools, e.stewardProposalTool(original))
 		}
 		filtered := []copilot.Tool{}
 		for _, tool := range tools {
@@ -1262,7 +1269,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	}
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)
-	tools = append(tools, e.ownershipTools(original)...)
+	tools = append(tools, e.stewardTools(original)...)
 	tools = append(tools, e.completionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
 	// Offer each tool only to the runs that can use it: plan authoring to the

@@ -30,6 +30,20 @@ func (e *Engine) activationContext(r Run, t Assignment, models []Model, catalogs
 	if t.Kind == "proposal" {
 		ctx["proposals"] = compactProposals(list[WorkProposal](s, "proposal", r.Org))
 	}
+	if t.StewardCreation {
+		connections := []map[string]string{}
+		for _, c := range list[Connection](s, "connection", r.Org) {
+			connections = append(connections, map[string]string{"id": c.ID, "name": c.Name, "transport": c.Transport})
+		}
+		existing := []map[string]any{}
+		for _, v := range s.stewards(r.Org) {
+			var a Agent
+			_ = s.Get(v.Agent, &a)
+			existing = append(existing, map[string]any{"agent": v.Agent, "name": a.Name, "charter": clipped(v.Charter, 400)})
+		}
+		ctx["org_connections"] = connections
+		ctx["existing_stewards"] = existing
+	}
 	recent := []ToolTrace{}
 	for _, trace := range taskTraces(s, r.Task) {
 		if trace.Run == r.ID {
@@ -43,9 +57,14 @@ func (e *Engine) activationContext(r Run, t Assignment, models []Model, catalogs
 	}
 	ctx["recent_tool_evidence"] = recent
 	ctx["completion_evidence"] = e.completionEvidence(r)
-	owner := e.ownerContext(r)
-	delete(owner, "guidance")
-	ctx["owner"] = owner
+	if steward := e.stewardContext(r.Agent, true); steward != nil {
+		ctx["steward"] = steward
+	}
+	if t.Steward != "" && t.Steward != r.Agent {
+		if steward := e.stewardContext(t.Steward, false); steward != nil {
+			ctx["context_steward"] = steward
+		}
+	}
 	coordination := e.requestContext(r)
 	delete(coordination, "guidance")
 	ctx["owner_coordination"] = coordination
@@ -114,7 +133,7 @@ func compactDecisions(decisions []Decision) []map[string]any {
 func compactProposals(proposals []WorkProposal) []map[string]any {
 	out := []map[string]any{}
 	for _, v := range proposals {
-		out = append(out, map[string]any{"id": v.ID, "title": v.Title, "state": v.State, "scope": clipped(v.Scope, 1200), "evidence": clipped(v.Evidence, 600), "revision": v.Revision, "area": v.Area})
+		out = append(out, map[string]any{"id": v.ID, "title": v.Title, "state": v.State, "scope": clipped(v.Scope, 1200), "evidence": clipped(v.Evidence, 600), "revision": v.Revision, "steward": v.Steward})
 		if len(out) == 24 {
 			break
 		}

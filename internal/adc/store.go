@@ -143,16 +143,18 @@ func (s *Store) Get(id string, v any) error {
 	}
 	allowed := false
 	switch v.(type) {
-	case *PublicIntentObservation:
-		allowed = kind == "public-intent-observation"
-	case *AreaNote:
-		allowed = kind == "area-note" || kind == "area-note-history"
+	case *Steward:
+		allowed = kind == "steward"
+	case *Fact:
+		allowed = kind == "fact" || kind == "fact-history"
+	case *JournalEntry:
+		allowed = kind == "journal"
+	case *Signal:
+		allowed = kind == "signal"
 	case *OwnerRequest:
 		allowed = kind == "owner-request" || kind == "owner-request-history"
 	case *CompletionEvidence:
 		allowed = kind == "completion-evidence" || kind == "completion-evidence-history"
-	case *Area:
-		allowed = kind == "area" || kind == "area-history"
 	case *GatewayTool:
 		allowed = kind == "gateway-tool"
 	case *ToolPolicy:

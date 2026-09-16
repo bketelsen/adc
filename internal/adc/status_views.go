@@ -13,10 +13,18 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 	var task Assignment
 	_ = s.Get(r.Task, &task)
 	switch p.View {
-	case "areas":
+	case "stewards":
 		items := []map[string]any{}
-		for _, a := range list[Area](s, "area", r.Org) {
-			items = append(items, map[string]any{"id": a.ID, "name": a.Name, "owner": a.Owner, "intent": clipped(a.Intent, 600), "completion_mode": a.CompletionMode})
+		for _, v := range s.stewards(r.Org) {
+			var a Agent
+			_ = s.Get(v.Agent, &a)
+			open := 0
+			for _, sig := range s.stewardSignals(v.Agent) {
+				if sig.State != "resolved" {
+					open++
+				}
+			}
+			items = append(items, map[string]any{"agent": v.Agent, "name": a.Name, "charter": clipped(v.Charter, 600), "completion_mode": v.CompletionMode, "facts": len(s.facts(v.Agent)), "open_signals": open, "repositories": v.Repositories})
 		}
 		start, end := statusPage(p.Offset, len(items))
 		return map[string]any{"items": items[start:end], "total": len(items), "next_offset": end}, nil
@@ -67,7 +75,7 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		proposals := list[WorkProposal](s, "proposal", r.Org)
 		out := []map[string]any{}
 		for _, v := range proposals {
-			out = append(out, map[string]any{"id": v.ID, "title": v.Title, "state": v.State, "scope": clipped(v.Scope, 1200), "evidence": clipped(v.Evidence, 600), "revision": v.Revision, "area": v.Area})
+			out = append(out, map[string]any{"id": v.ID, "title": v.Title, "state": v.State, "scope": clipped(v.Scope, 1200), "evidence": clipped(v.Evidence, 600), "revision": v.Revision, "steward": v.Steward})
 			if len(out) == 24 {
 				break
 			}
@@ -88,6 +96,6 @@ func (e *Engine) statusView(r Run, p statusInput) (any, error) {
 		}
 		return map[string]any{"task": task.ID, "state": task.State, "completion_policy": completionPolicy(task), "runs": runs, "review_needed": e.reviewNeeds(r.Task), "pending_decisions": decisions, "completion_evidence": e.completionEvidence(r), "guidance": "For exact run results use View run with ID; use review, connections, proposals or documents for focused evidence. Omit View for the legacy full snapshot."}, nil
 	default:
-		return nil, fmt.Errorf("View must be areas, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review (optional ID for one exact review), connections, proposals or documents; omit for the full snapshot")
+		return nil, fmt.Errorf("View must be stewards, coordination, step (with ID), decisions (optional ID/Offset), summary, run (with ID), review (optional ID for one exact review), connections, proposals or documents; omit for the full snapshot")
 	}
 }

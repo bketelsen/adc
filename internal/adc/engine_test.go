@@ -202,7 +202,7 @@ func TestRestartRequeuesInterruptedWork(t *testing.T) {
 func TestAllTemplatesRenderActualStates(t *testing.T) {
 	s, e, task, root := fixture(t)
 	w := NewWeb(s, e, false)
-	for _, view := range []string{"auth", "work", "team", "connections", "settings", "library", "task"} {
+	for _, view := range []string{"auth", "work", "team", "connections", "settings", "library", "task", "stewards"} {
 		t.Run(view, func(t *testing.T) {
 			p := Page{View: view, User: User{ID: "owner", Name: "Test"}, Org: Organization{ID: "org", Name: "Fixture"}, Task: task, Runs: []Run{root}, Agents: list[Agent](s, "agent", "org")}
 			var out bytes.Buffer

@@ -11,13 +11,13 @@ import (
 // Permanent-agent correspondence persists beyond either participating run.
 // Lead and Supervisor describe accountability, not a permissions tier.
 type OwnerRequest struct {
-	ID, Org, Lead, Supervisor, Recipient, Area, SourceTask, SourceRun           string
+	ID, Org, Lead, Supervisor, Recipient, SourceTask, SourceRun                 string
 	Subject, Question, Criteria, Reference, State, WaitReason, Created, Updated string
 	TargetRun, TargetTask, ReceiptRun, Response, ResponseReference, Responder   string
 	Revision, Deliveries                                                        int
 }
 
-type ownerRequestInput struct{ Recipient, Area, Key, Subject, Question, Criteria, Reference string }
+type ownerRequestInput struct{ Recipient, Key, Subject, Question, Criteria, Reference string }
 
 func requestOpen(q OwnerRequest) bool {
 	return q.State != "answered" && q.State != "declined" && q.State != "cancelled"
@@ -53,16 +53,10 @@ func (e *Engine) createOwnerRequest(r Run, p ownerRequestInput) (OwnerRequest, e
 	if err := s.checkOwnershipText(r.Org, p.Subject, p.Question, p.Criteria, p.Reference); err != nil {
 		return OwnerRequest{}, err
 	}
-	if p.Area != "" {
-		var a Area
-		if s.Get(p.Area, &a) != nil || a.Org != r.Org || a.Owner != recipient.ID {
-			return OwnerRequest{}, fmt.Errorf("area must belong to the receiving owner")
-		}
-	}
 	id := "owner-request:" + digest(r.Task + "\n" + r.Agent + "\n" + recipient.ID + "\n" + p.Key)[:32]
 	var old OwnerRequest
 	if s.Get(id, &old) == nil {
-		if old.Subject == p.Subject && old.Question == p.Question && old.Criteria == p.Criteria && old.Reference == p.Reference && old.Area == p.Area {
+		if old.Subject == p.Subject && old.Question == p.Question && old.Criteria == p.Criteria && old.Reference == p.Reference {
 			return old, nil
 		}
 		return old, fmt.Errorf("this key already identifies a different request; inspect its retained history")
@@ -82,7 +76,7 @@ func (e *Engine) createOwnerRequest(r Run, p ownerRequestInput) (OwnerRequest, e
 	if created >= 4 || open >= 16 {
 		return OwnerRequest{}, fmt.Errorf("coordination limit reached: four requests per source assignment, sixteen unresolved per recipient; consolidate existing requests")
 	}
-	q := OwnerRequest{ID: id, Org: r.Org, Lead: r.Agent, Supervisor: t.Owner, Recipient: recipient.ID, Area: p.Area, SourceTask: r.Task, SourceRun: r.ID, Subject: p.Subject, Question: p.Question, Criteria: p.Criteria, Reference: p.Reference, State: "pending", WaitReason: "Waiting for an authorized receiving work context", Created: now(), Updated: now(), Revision: 1}
+	q := OwnerRequest{ID: id, Org: r.Org, Lead: r.Agent, Supervisor: t.Owner, Recipient: recipient.ID, SourceTask: r.Task, SourceRun: r.ID, Subject: p.Subject, Question: p.Question, Criteria: p.Criteria, Reference: p.Reference, State: "pending", WaitReason: "Waiting for an authorized receiving work context", Created: now(), Updated: now(), Revision: 1}
 	return q, s.Put("owner-request", q.Org, q.Recipient, q.State, q.ID, q)
 }
 
@@ -123,9 +117,6 @@ func (e *Engine) receivingRun(org, agent string) (Run, bool) {
 		}
 		var t Assignment
 		if e.Store.Get(r.Task, &t) != nil || t.Org != org || t.Kind == "proposal" || t.State == "paused" || t.State == "cancelled" || t.State == "ready" || pendingDecision(e.Store, t.ID, r.ID) {
-			continue
-		}
-		if r.State != "running" && !e.withinBudget(t) {
 			continue
 		}
 		return r, true

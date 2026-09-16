@@ -108,9 +108,10 @@ type StandingSchedule struct {
 	Runs                                                                               int
 }
 
-func (e *Engine) approveSchedule(p WorkProposal, t Assignment, scope string, at time.Time) (StandingSchedule, []Write, error) {
+func (e *Engine) approveSchedule(p WorkProposal, t Assignment, scope string, at time.Time, bootstrap ...Agent) (StandingSchedule, []Write, error) {
 	// Validate account/agent now, but don't save an assignment until it is due.
-	writes, err := e.assignmentWrites(t)
+	// A bootstrap agent is one being created in the same transaction.
+	writes, err := e.assignmentWrites(t, bootstrap...)
 	if err != nil {
 		return StandingSchedule{}, nil, err
 	}

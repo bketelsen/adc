@@ -102,12 +102,12 @@ html[data-theme=dark]{color-scheme:dark;--bg:#171e2a;--surface:#202938;--surface
 #decisionlist>.decision{display:flex;flex-direction:column;max-height:calc(65dvh - 24px)}.decision-body{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:4px}#decisionlist>.decision>form{flex-shrink:0;margin-top:12px}.decision-body>.eyebrow{margin-top:0}
 
 /* Ownership detail stays quiet until opened, with visible disclosure controls. */
-.area-panel>details{border-top:1px solid var(--line);margin-top:10px;padding-top:3px}
-.area-panel details>summary{padding:10px 26px 10px 0;position:relative}
-.area-panel details>summary::after{content:'+';position:absolute;right:5px;color:var(--muted)}
-.area-panel details[open]>summary::after{content:'−'}
-.area-panel details article{border-top:1px solid var(--line);padding-top:16px;margin-top:12px}
-.area-panel>h3{margin-top:24px}
+.steward-panel>details{border-top:1px solid var(--line);margin-top:10px;padding-top:3px}
+.steward-panel details>summary{padding:10px 26px 10px 0;position:relative}
+.steward-panel details>summary::after{content:'+';position:absolute;right:5px;color:var(--muted)}
+.steward-panel details[open]>summary::after{content:'−'}
+.steward-panel details article{border-top:1px solid var(--line);padding-top:16px;margin-top:12px}
+.steward-panel>h3{margin-top:24px}
 
 /* Maintained owner briefing: current state first, dated narrative second. */
 .ownership-briefing{margin:1.6rem 0 2rem;padding:1.25rem;border:1px solid var(--line);border-radius:12px}
@@ -116,3 +116,16 @@ html[data-theme=dark]{color-scheme:dark;--bg:#171e2a;--surface:#202938;--surface
 .attention-signal .badge{align-self:flex-start}.attention-signal small{color:var(--muted)}
 .attention-brief{padding:1rem 0}.attention-narrative{max-width:76ch;overflow-wrap:anywhere}.attention-narrative>*:last-child{margin-bottom:.8rem}
 @media(max-width:600px){.ownership-briefing{padding:1rem}.ownership-briefing .section-heading{align-items:flex-start;gap:.5rem;flex-wrap:wrap}}
+
+.head-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.signal-strip{display:grid;gap:10px;margin-bottom:32px}
+.signal{display:grid;grid-template-columns:12px 1fr auto;gap:14px;align-items:start;padding:14px 18px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.signal-mark{width:12px;height:12px;border-radius:50%;margin-top:5px;background:#8a94a6}
+.signal.warning .signal-mark{background:#d99a2b}.signal.urgent .signal-mark{background:#d94a3d}
+.signal-copy{display:grid;gap:4px;min-width:0}.signal-copy strong{font-weight:600}.signal-copy small{color:var(--muted)}
+.signal-actions{display:flex;gap:8px;flex-wrap:wrap}
+.steward-panel dl.facts{display:grid;grid-template-columns:minmax(120px,max-content) 1fr;gap:6px 16px;margin:0}
+.steward-panel dl.facts dt{color:var(--muted);font-size:.85rem}.steward-panel dl.facts dd{margin:0;overflow-wrap:anywhere}
+.steward-panel .journal p{margin:6px 0;padding-left:12px;border-left:2px solid var(--line)}
+.steward-panel .journal small{color:var(--muted);display:block}
+@media (max-width:640px){.signal{grid-template-columns:12px 1fr}.signal-actions{grid-column:2}}

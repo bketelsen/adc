@@ -32,7 +32,7 @@ func recipientFixture(t *testing.T, s *Store, e *Engine) Run {
 }
 
 func TestOwnerRequestSurvivesSourceCompletionAndRestartWithoutBorrowingAuthority(t *testing.T) {
-	s, e, task, r, _ := ownershipFixture(t)
+	s, e, task, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	same := makeOwnerRequest(t, e, r)
 	if same.ID != q.ID {
@@ -91,7 +91,7 @@ func TestOwnerRequestSurvivesSourceCompletionAndRestartWithoutBorrowingAuthority
 }
 
 func TestOwnerRequestCancellationRevocationAndUnrelatedWork(t *testing.T) {
-	s, e, task, r, _ := ownershipFixture(t)
+	s, e, task, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	receiver := recipientFixture(t, s, e)
 	e.dispatchOwnerRequests()
@@ -120,7 +120,7 @@ func TestOwnerRequestCancellationRevocationAndUnrelatedWork(t *testing.T) {
 }
 
 func TestOwnerRequestBlockedResponseReachesLeadWithoutRetryLoop(t *testing.T) {
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	receiver := recipientFixture(t, s, e)
 	e.dispatchOwnerRequests()
@@ -142,7 +142,7 @@ func TestOwnerRequestBlockedResponseReachesLeadWithoutRetryLoop(t *testing.T) {
 }
 
 func TestOwnerRequestAttemptBudgetAndLeadHistory(t *testing.T) {
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	for i := 0; i < 3; i++ {
 		receiver := recipientFixture(t, s, e)
@@ -171,7 +171,7 @@ func TestOwnerRequestAttemptBudgetAndLeadHistory(t *testing.T) {
 }
 
 func TestOwnerRequestsBoundCreationAndRejectCredentials(t *testing.T) {
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	p := requestArgs()
 	p.Question = "password=not-for-shared-context"
 	if _, err := e.createOwnerRequest(r, p); err == nil {
@@ -195,7 +195,7 @@ func TestOwnerRequestsBoundCreationAndRejectCredentials(t *testing.T) {
 }
 
 func TestOwnerRequestDoesNotWakeWaitingReceiverOrLead(t *testing.T) {
-	s, e, task, r, _ := ownershipFixture(t)
+	s, e, task, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	receiver := recipientFixture(t, s, e)
 	receiver.State = "waiting"
@@ -224,7 +224,7 @@ func TestOwnerRequestDoesNotWakeWaitingReceiverOrLead(t *testing.T) {
 }
 
 func TestBlockedRequestCanBeAnsweredByLaterOwnerRun(t *testing.T) {
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	q := makeOwnerRequest(t, e, r)
 	receiver := recipientFixture(t, s, e)
 	e.dispatchOwnerRequests()
@@ -244,7 +244,7 @@ func TestBlockedRequestCanBeAnsweredByLaterOwnerRun(t *testing.T) {
 }
 
 func TestOwnerRoutingCachePreservesAllMessages(t *testing.T) {
-	s, e, _, r, _ := ownershipFixture(t)
+	s, e, _, r, _ := stewardFixture(t)
 	q1 := makeOwnerRequest(t, e, r)
 	p := requestArgs()
 	p.Key = "second"
