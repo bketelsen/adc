@@ -593,7 +593,7 @@ func (e *Engine) ownershipTools(original Run) []copilot.Tool {
 			}
 			return e.registerFollowup(r, p, time.Now())
 		}),
-		copilot.DefineTool("adc_obligation_result", "As a substantive verification worker, record pass or fail for this assignment's linked obligation (Obligation may be omitted), observed Summary, evidence Reference and current observation Revision (0 initially). Then finish under the saved completion policy; reviewed work obtains independent review, while routine work can be observed directly by the owner. This evidence participates in the review revision and does not itself close the obligation.", func(p observationInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_obligation_result", "As the verification worker, record pass or fail for this assignment's linked obligation with observed Summary, evidence Reference and current Revision (0 initially), then finish under the saved completion policy. This does not itself close the obligation.", func(p observationInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()

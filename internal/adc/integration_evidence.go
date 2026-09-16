@@ -458,7 +458,7 @@ func (e *Engine) recordValidation(r Run, p validationInput, observed bool) (Inte
 func (e *Engine) integrationTools(ctx context.Context, original Run) []copilot.Tool {
 	s := e.Store
 	return []copilot.Tool{
-		copilot.DefineTool("adc_integration", "Record the tested combination for your current plan step. Revision is the current Integration.Revision in adc_status. Repositories contain Identity, registered host Path and Commit from adc_code, exact ancestor Base commit, optional PullRequest/Release references. Consumes contains direct prerequisite Step, Repository identity and exact Commit. Environment contains Name/Version pins. Updates replace these lists and invalidate checks when material inputs change. References and environment pins are agent-reported, not observed remote state. Never include credentials.", func(p integrationInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_integration", "Record the tested combination for your current plan step at the current Integration.Revision: Repositories {Identity, Path, Commit from adc_code, Base, optional PullRequest/Release}, Consumes {Step, Repository, Commit} for direct prerequisites, and Environment {Name, Version} pins. Replacing these invalidates checks that depended on them. Never include credentials.", func(p integrationInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			return e.saveIntegration(original, p)

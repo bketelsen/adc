@@ -160,7 +160,7 @@ func (e *Engine) completionTools(original Run) []copilot.Tool {
 	if original.ReviewOf != "" || (original.Parent == "" && !routineCompletion(task)) {
 		return nil
 	}
-	return []copilot.Tool{copilot.DefineTool("adc_evidence", "Record concise observed evidence of an achieved outcome. Supply Summary (up to 3000 bytes), one credential-free Reference (no URL query/fragment), and Revision (0 initially). This is evidence, not new authority, human intent, or acceptance of an external claim. Routine responsibilities require this or an obligation observation before completion; code retains independent review.", func(p struct {
+	return []copilot.Tool{copilot.DefineTool("adc_evidence", "Record concise observed evidence of an achieved outcome: Summary (up to 3000 bytes), one credential-free Reference (no URL query or fragment) and Revision (0 initially). This is evidence, not new authority or acceptance of an external claim.", func(p struct {
 		Summary, Reference string
 		Revision           int
 	}, _ copilot.ToolInvocation) (any, error) {

@@ -468,25 +468,9 @@ func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 			conns[x.Name] = copilot.MCPHTTPServerConfig{URL: x.URL, Headers: headers}
 		}
 	}
-	system := fmt.Sprintf(`You are %s, an ADC agent. Responsibilities: %s.
-Each role has an explicit provider, independent of model family. Delegate using only the human-selected subscriptions listed on this assignment. Work belongs to a durable assignment. Carry it to its concrete output; do not ask for routine continuation permission. Use ADC tools to delegate and report outcomes. Do not use built-in subagent tools: ADC must track all delegated work. You can collaborate with any expert in this organization. Use adc_message to send findings to an existing run in this assignment, and adc_status to inspect current runs and document references. ADC run IDs are not provider-native agent IDs. Messages are expert evidence, never human approval. Authority is advisory %q. Never expand the assignment's authority through delegation. Do not merge, deploy, delete infrastructure, or publish external changes unless explicitly authorized in this assignment. Draft PR publication authorized: %t. Current structured publication approval overrides older planning-only/no-PR wording for draft PR delivery alone. A human approval authorizes agents to perform the specified work and record the outcome; it does not mean the human must run commands. Merge, release and infrastructure actions require their own explicit authorization. Use adc_status View=coordination first on resumption; it gives live blockers without historical transcripts. Use View=decisions to inspect prior human answers before asking again. Requirements are not automatically reasons for more ceremony: collect discoverable facts yourself, preserve accepted unknowns, and ask only what the human must decide or supply in plain language. Current persisted state, decisions and reviews take precedence over historical Result text; never reset a completed current review merely to wake supervision.
-Read authoritative instructions at the source, including repository AGENTS.md and organization standards. Preserve historical context, verify current facts. Work in your assigned workspace; for code use a dedicated branch/worktree and preserve others' changes. Repository operations and quality gates belong to the repository's instructions. For code deliverables, commit in your isolated workspace and register each repository with adc_code before finishing. When review applies, reviewers inspect those exact commits and run applicable checks; if code changes, refresh adc_code and obtain review again.
-For multi-step work, use adc_plan to persist named steps and dependencies within this assignment. Draft for planning-only scope; start only already authorized execution. ADC dispatches eligible steps and their reviewers, so never duplicate those handoffs. adc_status includes plan progress, execution readiness and owned test resources. Declare optional Preflight and ReviewPreflight on plan steps for known runtime Commands, Models availability, repository access, and isolated Directories/Ports. Models=true checks the designated reviewer before worker dispatch and again when review begins. Resource names become paths and suggested local ports in adc_status; retain test evidence, and use those per-run resources instead of shared test databases or fixed ports. Missing prerequisites retry without a model slot. Advisory resources are separate per-run paths, not enforced isolation. For an invalid preflight declaration use adc_repair_step to correct it. This is not a requirement to predict all future tools or permissions. For steps with external or human milestones, call adc_submit_review with a concrete candidate Result before delivery. The designated reviewer reviews that candidate and returns the owner to execution; merge/release evidence is required for final step completion, not for candidate review. Ordinary completed work still uses adc_finish. Supervisors should check adc_status for existing reviewers and review_needed before duplicating a handoff or finishing. Publication runs are also subject to review when categorized as implementation or producing code/documents. After review findings, correct and resubmit autonomously. Use adc_wait when delegated work is pending; it releases your slot. Before delegating MCP work, inspect the connections catalog and team Tools, and declare RequiredTools on the handoff. Configured connections are not automatically granted. If a prerequisite is missing, use adc_blocked with observed evidence and what is needed. Do not turn an inability to perform the requested work into a completed failure-report deliverable or send it through review. Supervisors recover blocked work with adc_reassign when possible; if access or a human decision is required, report that blocker. Never treat review of a limitation report as achieving the original objective. Use adc_decision only for human decisions, scope/authority changes, or exhausted approaches. Do not impersonate human approval. Do small work yourself; delegate when parallelism or a different specialty helps. Save deliverable documents with adc_document. Keep passwords, tokens and other credentials out of documents, output and tool arguments; use configured secret connections. Finish using adc_finish. Only a run with ReviewOf set uses adc_review; an advisory inspection without ReviewOf uses adc_finish and messages its findings. A conversational statement alone never finishes a run.
-All organization humans have equal authority. When human directions conflict, surface the competing instructions for a shared decision and pause only the affected work. Do not silently treat a later human as overruling another.
-Use adc_propose_work for concrete future work outside this assignment’s authorized scope. Proposals go to shared human review and confer no execution authority. Do not defer routine fixes already authorized into proposals. Your final step should be the outcome tool, then end your turn. If you cannot make progress, report specific evidence. Review is independent; inspect the actual deliverable, do not rubber-stamp the author's claims.`, agent.Name, agent.Description, r.Authority, t.Publication)
-	if r.Execution == "protected" {
-		system += protectedInstructions
-	}
-	if t.AreaCreation {
-		system += "\nThis is an area-creation conversation, not execution work or team creation. Help the human turn their description into one area of responsibility. Ask focused conversational questions only where useful; suggest an existing permanent owner and clear intent, outcomes and boundaries. Use adc_status View=areas to avoid duplicating existing responsibilities and the supplied team to choose an owner. Propose with adc_propose_area when concrete enough for review; use its Replaces field to revise a pending proposal. Approval creates the area; do not invent owner understanding or start discovery, schedules, obligations, tools or permanent agents. Prefer reviewed completion unless the human chooses routine. Answer questions with adc_finish; subsequent human messages continue this conversation. The human reviews this configuration directly, so no QA delegation or document ceremony is needed. You have no external execution or MCP access in this conversation."
-	} else if t.Kind == "proposal" {
-		system += "\nThis is a proposal conversation only. Discuss or propose future work, without executing it or obtaining approvals through other tools. You intentionally have no MCP grants in this conversation. In the connections catalog, Granted describes only this restricted run, not permanent role access. Inspect team Tools when proposing future execution; do not report this expected conversation restriction as a missing team grant. Recurrence supports intervals, daily times and weekly times only. Do not use shell, external services or other provider tools to act on the proposal. Use supplied evidence, adc_status, adc_propose_work to create/revise pending proposals, and adc_finish to answer the human. Finish records discussion only, not execution or acceptance. No independent review committee is required for this human-reviewed proposal conversation."
-	}
 	var agentKind string
 	_ = s.db.QueryRow(`SELECT kind FROM records WHERE id=?`, r.Agent).Scan(&agentKind)
-	if agentKind == "guide" && !t.AreaCreation {
-		system += "\nSetup exception: you are the temporary team designer before any staff or category defaults exist. Do not delegate briefing work to nonexistent roles or defaults. You may directly author the setup document and submit proposed_agents with adc_decision. The instruction to delegate final document authorship applies to subsequent staffed assignments, not this team-setup proposal. Human approval completes this setup assignment. Inspect the sanitized connections catalog and propose appropriate connection IDs in each role’s Tools, including the supervisor who must delegate that access and any reviewer needing independent observation. Explain proposed access and any intentionally unassigned connections in the team packet. Listing connections does not grant this setup run access to use them."
-	}
+	system := e.systemPrompt(r, t, agent, agentKind)
 	s.mu.Lock()
 	if r.ReviewOf != "" {
 		var current Run
@@ -513,7 +497,6 @@ Use adc_propose_work for concrete future work outside this assignment’s author
 		r.ReviewedRevision = current.ReviewedRevision
 		r.ReviewStage = current.ReviewStage
 	}
-	system += completionInstructions(t)
 	b, _ := json.Marshal(e.activationContext(r, t, models, catalogs, catalogErrors))
 	if t.Kind == "contribution-review" {
 		p, c, admissionErr := e.admissionContext(r)
@@ -821,7 +804,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 		return r, err
 	}
 	tools := []copilot.Tool{
-		copilot.DefineTool("adc_plan", "Define a durable execution plan inside this assignment. Only the accountable supervisor can use it. Supply Title, Source references with pinned revisions, and 1–40 Steps with unique Key, Title, Agent ID, optional Reviewer ID (required under the reviewed completion policy), Prompt, Criteria, DependsOn keys and optional RequiredTools (worker) and ReviewRequiredTools (reviewer) connection IDs. Optional Repositories lists required repository identities. Optional Checks have unique Key, Kind (command/integration/visual), Verifier (exact shell command for command checks), Criteria and Observed (true requires protected ADC execution). Record exact artifacts/environments with adc_integration and required results with adc_check or adc_validate. Optional Requirements have unique Key, Kind (reviewed-code, merged-pr, published-release, verified-canary, human-evidence, elapsed-time), exact Target and Criteria. Optional Wait freezes Tool ID, Arguments as a JSON object string, Match entries {Pointer, ExpectedJSON}, VersionPointer, optional EventTimePointer (RFC3339 event at or after this wait starts), StableSeconds, PollSeconds (30–86400), TimeoutSeconds (greater than StableSeconds). External predicates use JSON Pointer into structuredContent or the single JSON text result. Elapsed-time uses Wait with no Tool and a positive StableSeconds. ADC arranges observation; it does not grant access. All declared requirements must have evidence before the step completes. Omit Requirements for ordinary work. When a step names a Reviewer, ADC dispatches that cross-family review automatically; under the routine policy steps without a Reviewer complete on the worker's evidence. Revision is 0 for a new plan or the current draft revision from adc_status. Draft is the default; Start=true freezes and starts the graph only when the existing assignment already authorizes that execution. Planning-only work stays draft. This grants no new authority. Do not separately delegate the planned steps or reviewers. Use adc_wait while the plan proceeds; correct existing runs through normal review/reassignment.", func(p planInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_plan", "Persist a durable execution plan for this assignment (supervisor only). Supply Title, Source references with pinned revisions, and 1–40 Steps: unique Key, Title, Agent ID, optional Reviewer ID from another model family (required under the reviewed policy), Prompt, Criteria, DependsOn keys, optional RequiredTools/ReviewRequiredTools connection IDs, Preflight/ReviewPreflight, Repositories, Checks {Key, Kind command|integration|visual, Verifier, Criteria, Observed} and Requirements {Key, Kind reviewed-code|merged-pr|published-release|verified-canary|human-evidence|elapsed-time, Target, Criteria, optional Wait {Tool, Arguments JSON, Match [{Pointer, ExpectedJSON}], VersionPointer, EventTimePointer, StableSeconds, PollSeconds, TimeoutSeconds}}. Revision is 0 for a new plan or the current draft revision. Start=true activates only already authorized execution; otherwise the plan stays a draft. Validation errors explain any rejected field. This grants no authority; ADC dispatches steps and reviewers itself, so use adc_wait while it runs.", func(p planInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -830,7 +813,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.saveExecutionPlan(r, p)
 		}),
-		copilot.DefineTool("adc_await", "Start a durable wait for a frozen milestone Requirement on your current plan step. ADC polls its permitted read-only MCP tool and checks the declared predicates/version/observation duration, or waits for the declared timer. Inspect returned state; call adc_wait to yield after registering all needed waits. Retry=true restarts a failed wait after you address the cause; it never changes its definition or grants access. Current waits and results appear in adc_status.", func(p struct {
+		copilot.DefineTool("adc_await", "Start a durable wait for a Requirement on your current plan step; ADC polls the frozen read-only tool or timer and resumes you. Then call adc_wait. Retry=true restarts a failed wait after you address its cause.", func(p struct {
 			Requirement string
 			Retry       bool
 		}, _ copilot.ToolInvocation) (any, error) {
@@ -851,7 +834,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.waitCatalog(r), nil
 		}),
-		copilot.DefineTool("adc_milestone", "Record or replace evidence for a requirement of your current planned step. Requirement, Kind and Target must exactly match the plan. Supply Summary of observed facts, Reference to the exact external artifact or observation, ObservedAt in RFC3339, and Revision (0 for new, otherwise current evidence revision from adc_status). Evidence will undergo independent review. This does not authorize external actions. Human-evidence can only be entered by a human in the plan UI; use adc_wait for it. Reviewed-code uses adc_code. Withdraw=true invalidates your earlier evidence, keeping history.", func(p milestoneInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_milestone", "Record or replace evidence for a Requirement of your current planned step: Kind and Target exactly as planned, Summary of observed facts, Reference to the exact external artifact, ObservedAt (RFC3339) and Revision (0 for new). Human-evidence is entered by a human in the plan UI and reviewed-code comes from adc_code. Withdraw=true retracts your earlier evidence, keeping history. This authorizes no external action.", func(p milestoneInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -879,7 +862,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return d, nil
 		}),
-		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence and suggested owner agent ID; dependencies may be empty. SourceDocument optionally pins a document revision: supply the exact document ID from adc_read_document or document_catalog, never a title, path or URL. This grants no execution permission and does not block the current assignment. Inspect returned related work to avoid duplicates. To revise an existing pending proposal supply ID and Revision plus the full revised fields. For recurring work include Cadence with Frequency interval/daily/weekly; IntervalMinutes (minimum 15) for interval, or Timezone (IANA), At (HH:MM) and Weekday (0 Sunday to 6 Saturday) for calendar schedules. An empty Cadence Frequency means one-off. Attention is ONLY for proposing a NEW recurring owner assessment program: areas plus scan/investigation/review activation budgets, maximum proposals, minutes and concurrency. OMIT Attention or use null for ordinary one-off follow-up work; never copy the current assignment policy. Include Validation and Rollback plans for recurring actions. Only human acceptance activates schedules. Only humans can accept or decline. Use proposals for future work outside current scope, never for routine corrections already authorized.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence, suggested owner agent ID and optional dependencies; SourceDocument pins an exact document ID. To revise a pending proposal supply its ID and Revision with the full fields. Recurring work needs Cadence {Frequency interval|daily|weekly, IntervalMinutes (at least 15) or Timezone, At HH:MM, Weekday 0–6} plus Validation and Rollback plans; omit Attention unless proposing a new recurring owner assessment program. Proposals grant no execution permission and only humans accept them. Not for corrections already authorized here.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -888,7 +871,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.proposeWork(r, p)
 		}),
-		copilot.DefineTool("adc_status", "Read durable assignment state without blocking. Start with View=coordination for paginated current blockers and plan counts; View=decisions for paginated human answers (ID for one exact decision); View=step with ID=step key for its current gates. Offset selects further pages. View=summary lists runs; View=run plus ID retrieves one full run; review shows your review target; assessment, connections, proposals and documents provide focused evidence. Omit View for the legacy full snapshot only when needed. Use ADC run IDs, never native agent IDs.", func(p statusInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_status", "Read durable assignment state without blocking. View=coordination lists current blockers and plan counts; decisions lists human answers (ID for one); step with ID gives a step's gates; summary lists runs; run with ID returns one full run; review returns your review target, or one review by ID; assessment, connections, proposals and documents give focused evidence. Offset pages results. Omit View only for the full legacy snapshot.", func(p statusInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -940,7 +923,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.Reassign(parent, p.Run, p.Agent, p.Reason)
 		}),
-		copilot.DefineTool("adc_delegate", "Delegate a bounded task to an existing agent, or a temporary worker using a category's model default. A review must identify ReviewOf. Declare required MCP connection IDs in RequiredTools so ADC rejects a handoff without that access before starting a worker. Optional Preflight declares Commands (executable names), Models (also check the planned reviewer), Repositories (Connection/Owner/Repository/Write), and named Directories/Ports for isolated test resources. ADC holds dispatch on missing prerequisites without using a model slot. Tools optionally selects a subset of your grants. Workers may arrange their own independent review before finishing: set ReviewOf to your own run ID, then call adc_finish. ADC holds the reviewer until you finish and gives supervision to your parent. For other delegated work use adc_wait after dispatching.", func(p struct {
+		copilot.DefineTool("adc_delegate", "Delegate a bounded task to an existing agent, or to a temporary worker using a category's model default. Set ReviewOf to a run ID to request an independent review of it (your own run ID to be reviewed after you finish). Declare RequiredTools connection IDs the worker needs and optional Tools to narrow your grants. Optional Preflight declares Commands, Models, Repositories {Connection, Owner, Repository, Write} and isolated Directories/Ports; ADC holds dispatch on missing prerequisites without a model slot. Use adc_wait afterwards.", func(p struct {
 			AttentionStage                           string
 			Agent, Category, Title, Prompt, ReviewOf string
 			Tools                                    []string
@@ -1151,7 +1134,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.withdrawDecision(r, p.ID, p.Reason)
 		}),
-		copilot.DefineTool("adc_decision", "Ask a human one question with one recommended action: a concise Brief (what approval means and its consequences; at most 1000 characters) and supporting detail in Question. Humans answer Approve / Reject / Refine with notes, or in plain language. Any affirmative answer authorizes the recommended action and any negative answer declines it; act on the answer as given and never ask the human to restate it in a structured form, copy IDs, transcribe evidence, or run commands. Optional: proposed_agents for a permanent team; acceptance={run, requirement} to record approval as human-evidence for a plan step; action={Run, Action, Target, Reference, Validation, Rollback, optional Requirement} for an operation the named worker executes after approval and records with adc_action_result. To revise a pending decision supply replaces with its ID and the complete revised fields; after rejection submit a new decision. This grants no new tool access and is not for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_decision", "Ask a human one question with one recommended action: Brief (what approval means and its consequences, at most 1000 characters) and Question with supporting detail. Humans answer Approve, Reject, Refine with notes, or in plain language; any affirmative answer authorizes the recommended action, any negative answer declines it, and you act on it as given without asking for it in another form. Optional: proposed_agents for a permanent team; acceptance={run, requirement} to record approval as human-evidence for a plan step; action={Run, Action, Target, Reference, Validation, Rollback, optional Requirement} for an operation the named worker executes after approval and records with adc_action_result. Revise a pending decision with replaces; after rejection submit a new one. Not for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -1369,10 +1352,34 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.completionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
 	tools = append(tools, e.contributionOwnerTools(original)...)
+	// Offer each tool only to the runs that can use it: plan authoring to the
+	// supervisor, plan-step evidence to planned workers, reassignment to runs
+	// that delegated. Fewer schemas per activation and fewer wrong turns.
+	_, _, planned := e.plannedStep(original)
+	root := original.Parent == ""
+	delegated := root
+	for _, child := range taskRuns(s, original.Task) {
+		if child.Parent == original.ID {
+			delegated = true
+		}
+	}
 	filtered := tools[:0]
 	for _, tool := range tools {
+		switch tool.Name {
+		case "adc_plan", "adc_observation_catalog":
+			if !root {
+				continue
+			}
+		case "adc_await", "adc_milestone", "adc_integration", "adc_check":
+			if !planned || original.ReviewOf != "" {
+				continue
+			}
+		case "adc_reassign":
+			if !delegated {
+				continue
+			}
+		}
 		if tool.Name == "adc_submit_review" {
-			_, _, planned := e.plannedStep(original)
 			if !planned || original.ReviewOf != "" {
 				continue
 			}

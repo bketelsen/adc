@@ -56,7 +56,7 @@ func (w *Web) startAreaConversation(r *http.Request, p Page) error {
 }
 
 func (e *Engine) areaProposalTool(original Run) copilot.Tool {
-	return copilot.DefineTool("adc_propose_area", "Propose one area for human approval in this area-creation conversation. Supply Name, an existing permanent Owner agent ID, Intent covering desired outcomes and boundaries, and CompletionMode reviewed (default) or routine. Creation grants no tools and schedules no work. Use Replaces with the pending decision ID to revise the complete proposal; after reject/refine create a new proposal. Human approval creates the area; do not claim it exists before approval.", func(p areaProposalInput, _ copilot.ToolInvocation) (any, error) {
+	return copilot.DefineTool("adc_propose_area", "Propose one area for human approval: Name, existing permanent Owner agent ID, Intent (outcomes and boundaries) and CompletionMode routine (default) or reviewed. Use Replaces with the pending decision ID to revise. Approval creates the area; it grants no tools and schedules no work.", func(p areaProposalInput, _ copilot.ToolInvocation) (any, error) {
 		s := e.Store
 		s.mu.Lock()
 		defer s.mu.Unlock()
