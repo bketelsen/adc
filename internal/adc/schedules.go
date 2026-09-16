@@ -110,16 +110,6 @@ type StandingSchedule struct {
 
 func (e *Engine) approveSchedule(p WorkProposal, t Assignment, scope string, at time.Time) (StandingSchedule, []Write, error) {
 	// Validate account/agent now, but don't save an assignment until it is due.
-	t.Attention = p.Attention
-	var replaced StandingSchedule
-	if p.Attention != nil && p.Attention.ReplacesSchedule != "" {
-		if err := validateAttention(e.Store, p.Org, p.Attention); err != nil {
-			return StandingSchedule{}, nil, err
-		}
-		if e.Store.Get(p.Attention.ReplacesSchedule, &replaced) != nil || replaced.Revision != p.Attention.ReplacesRevision || (replaced.State != "active" && replaced.State != "paused") {
-			return StandingSchedule{}, nil, fmt.Errorf("replacement source changed; inspect the schedule before approving")
-		}
-	}
 	writes, err := e.assignmentWrites(t)
 	if err != nil {
 		return StandingSchedule{}, nil, err
@@ -141,17 +131,6 @@ func (e *Engine) approveSchedule(p WorkProposal, t Assignment, scope string, at 
 	schedule.Template.ID = ""
 	schedule.Template.Schedule = schedule.ID
 	result := []Write{{"schedule", schedule.Org, schedule.Proposal, schedule.State, schedule.ID, schedule}}
-	if replaced.ID != "" {
-		if replaced.Cadence == schedule.Cadence {
-			schedule.NextAt = replaced.NextAt
-		}
-		schedule.Template.Attention.ReplacesSchedule, schedule.Template.Attention.ReplacesRevision = "", 0
-		result[0].Value = schedule
-		replaced.State, replaced.Note = "replaced", "Replaced by approved bounded assessment "+schedule.ID+". Earlier assignments and evidence are retained."
-		replaced.Revision++
-		replaced.Updated = now()
-		result = append(result, Write{"schedule", replaced.Org, replaced.Proposal, replaced.State, replaced.ID, replaced})
-	}
 	return schedule, result, nil
 }
 func (e *Engine) validateSchedule(s StandingSchedule) error {
@@ -196,11 +175,6 @@ func (e *Engine) dispatchSchedules(at time.Time) {
 		busy := false
 		for _, task := range list[Assignment](e.Store, "assignment", schedule.Org) {
 			if task.Schedule == schedule.ID && task.State != "ready" && task.State != "cancelled" {
-				// An exhausted occurrence retains evidence but cannot permanently
-				// suppress the next approved read-only assessment.
-				if schedule.Template.Attention != nil && task.State == "paused" {
-					continue
-				}
 				busy = true
 				break
 			}
@@ -213,7 +187,6 @@ func (e *Engine) dispatchSchedules(at time.Time) {
 			continue
 		}
 		t := schedule.Template
-		t.AttentionStarted = ""
 		if t.Execution == "" {
 			t.Execution = "advisory"
 		}

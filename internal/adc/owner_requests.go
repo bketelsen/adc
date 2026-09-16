@@ -125,7 +125,7 @@ func (e *Engine) receivingRun(org, agent string) (Run, bool) {
 		if e.Store.Get(r.Task, &t) != nil || t.Org != org || t.Kind == "proposal" || t.State == "paused" || t.State == "cancelled" || t.State == "ready" || pendingDecision(e.Store, t.ID, r.ID) || e.Store.obligationRunProblem(t) != "" {
 			continue
 		}
-		if r.State != "running" && !e.attentionCapacity(t) {
+		if r.State != "running" && !e.withinBudget(t) {
 			continue
 		}
 		return r, true

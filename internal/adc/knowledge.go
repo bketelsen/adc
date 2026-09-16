@@ -199,7 +199,7 @@ func publicAreaIntent(a Area) (string, error) {
 func (e *Engine) discoveryWrites(a Area, t Assignment) ([]Write, error) {
 	for _, old := range list[Assignment](e.Store, "assignment", a.Org) {
 		if old.Area == a.ID && old.Kind == "owner-discovery" && old.State != "ready" && old.State != "cancelled" {
-			if old.State == "paused" && !e.attentionCapacity(old) {
+			if old.State == "paused" && !e.withinBudget(old) {
 				return nil, fmt.Errorf("the earlier discovery spent its budget; cancel that retained task before starting a newly scoped discovery: /task?org=%s&id=%s", a.Org, old.ID)
 			}
 			return nil, fmt.Errorf("area discovery already exists: /task?org=%s&id=%s", a.Org, old.ID)
@@ -234,12 +234,12 @@ func (e *Engine) boundDiscovery() {
 		if (t.Kind != "owner-discovery" && t.Obligation == "") || t.State == "ready" || t.State == "cancelled" || t.State == "paused" {
 			continue
 		}
-		_, running := e.attentionSpent(t.ID)
-		if e.attentionCapacity(t) || running {
+		_, running := e.budgetSpent(t.ID)
+		if e.withinBudget(t) || running {
 			continue
 		}
 		e.holdObligationTask(t.ID)
-		e.Store.Log(t.Org, t.ID, "", "attention", "Attention exhausted its shared activation budget; retained for scoped reassessment, not silently queued")
+		e.Store.Log(t.Org, t.ID, "", "budget", "Shared activation budget exhausted; retained for scoped reassessment, not silently queued")
 	}
 }
 
@@ -251,20 +251,19 @@ func observationTime(value string) bool {
 	return err == nil && !at.After(time.Now().Add(5*time.Minute))
 }
 
-func (e *Engine) attentionSpent(task string) (total int, running bool) {
+// budgetSpent and withinBudget bound the activations a discovery or
+// verification assignment may consume across all of its runs.
+func (e *Engine) budgetSpent(task string) (total int, running bool) {
 	for _, r := range taskRuns(e.Store, task) {
 		total += r.Activations
 		running = running || r.State == "running"
 	}
 	return
 }
-func (e *Engine) attentionCapacity(t Assignment) bool {
+func (e *Engine) withinBudget(t Assignment) bool {
 	limit := 0
 	if t.Kind == "owner-discovery" {
 		limit = 24
-	}
-	if t.Attention != nil {
-		limit = t.Attention.Scan + t.Attention.Investigation + t.Attention.Review
 	}
 	if t.Obligation != "" {
 		limit = 48
@@ -272,7 +271,7 @@ func (e *Engine) attentionCapacity(t Assignment) bool {
 	if limit == 0 {
 		return true
 	}
-	total, _ := e.attentionSpent(t.ID)
+	total, _ := e.budgetSpent(t.ID)
 	return total < limit
 }
 

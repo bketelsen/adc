@@ -28,9 +28,6 @@ var assets embed.FS
 
 type User struct{ ID, Name, Username string }
 type Page struct {
-	Assessments                                                 []AssessmentEntry
-	AttentionBriefs                                             []BriefEntry
-	OwnershipBriefing                                           OwnershipBriefing
 	Coordination                                                OwnerRequestPage
 	AreaKnowledge                                               []AreaKnowledge
 	Areas                                                       []Area
@@ -88,7 +85,7 @@ type Web struct {
 }
 
 func NewWeb(s *Store, e *Engine, secure bool) *Web {
-	f := template.FuncMap{"completionPolicy": completionPolicy, "attentionSummary": attentionSummary, "planGraph": planGraph, "clip": func(s string, n int) string {
+	f := template.FuncMap{"completionPolicy": completionPolicy, "planGraph": planGraph, "clip": func(s string, n int) string {
 		r := []rune(s)
 		if len(r) > n {
 			return string(r[:n-1]) + "…"
@@ -273,7 +270,6 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/":
-		p.OwnershipBriefing = w.Engine.ownershipBriefing(p.Org.ID)
 	case "/coordination":
 		w.ownerRequestPage(r, &p)
 	case "/areas":
@@ -468,7 +464,6 @@ func (w *Web) route(rw http.ResponseWriter, r *http.Request) {
 		p.Reviews = taskReviews(w.Store, id)
 		p.Traces = taskTraces(w.Store, id)
 		p.Decisions = taskDecisions(w.Store, id)
-		w.populateAssessment(&p)
 		if r.URL.Path == "/live" || r.URL.Path == "/live-plan" {
 			w.live(rw, r, p)
 			return
@@ -728,8 +723,8 @@ func (w *Web) action(r *http.Request, p Page) error {
 				if t.State != "paused" {
 					return errors.New("Only a paused assignment can be resumed")
 				}
-				if !w.Engine.attentionCapacity(t) || w.Engine.attentionExpired(t, time.Now()) || w.Engine.attentionQueueExpired(t, time.Now()) || w.Engine.exhaustedAttentionStage(t) != "" {
-					return errors.New("This attention task spent its shared budget; reassess its scope before starting further work")
+				if !w.Engine.withinBudget(t) {
+					return errors.New("This task spent its shared activation budget; reassess its scope before starting further work")
 				}
 				if reason := s.obligationRunProblem(t); reason != "" {
 					return errors.New(reason + "; reassess the retained obligation before resuming")
@@ -1002,9 +997,8 @@ func (w *Web) live(rw http.ResponseWriter, r *http.Request, p Page) {
 		p.Reviews = taskReviews(w.Store, p.Task.ID)
 		p.Traces = taskTraces(w.Store, p.Task.ID)
 		_ = w.Store.Get(p.Task.ID, &p.Task)
-		w.populateAssessment(&p)
 		var b bytes.Buffer
-		names := []string{"execution-plan", "assessment-records", "taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"}
+		names := []string{"execution-plan", "taskstatus", "runlist", "timeline", "decisionlist", "doclist", "reviewlist", "toollist"}
 		if p.View == "plan" {
 			names = []string{"execution-plan"}
 		}
@@ -1055,7 +1049,6 @@ func (w *Web) liveWork(rw http.ResponseWriter, r *http.Request, p Page) {
 		p.Tasks = list[Assignment](w.Store, "assignment", p.Org.ID)
 		p.Decisions = pendingOrganizationDecisions(w.Store, p.Org.ID)
 		p.ProposalCount = pendingProposals(w.Store, p.Org.ID)
-		p.OwnershipBriefing = w.Engine.ownershipBriefing(p.Org.ID)
 		var b bytes.Buffer
 		if w.templates.ExecuteTemplate(&b, "workboard", p) != nil {
 			return

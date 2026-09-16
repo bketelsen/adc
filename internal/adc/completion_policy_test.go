@@ -254,10 +254,10 @@ func TestHardwareExperimentKeepsValidationOwedDespiteExternalClaim(t *testing.T)
 	args.Criteria = "Internally validated installation, optimized driver and reboot evidence; an external PASS claim alone is insufficient"
 	o := createFollowup(t, e, root, args)
 	// A completed experiment is intentionally distinct from verified support.
-	worker := assessmentWorker(t, e, root, "dev", "")
+	worker := delegatedWorker(t, e, root, "dev")
 	_, err = call(t, e, worker, "adc_document", map[string]string{"Title": "Experimental result", "Content": "The fixture experiment is complete. Hardware support remains unverified; evidence is still owed.", "Source": "fixture://experiment"})
 	must(t, err)
-	passAttentionRun(t, e, worker)
+	passReviewedRun(t, e, worker)
 	_, err = call(t, e, root, "adc_finish", map[string]string{"Result": "Experimental milestone complete and independently reviewed; hardware validation is still owed."})
 	must(t, err)
 	must(t, s.Get(o.ID, &o))
@@ -276,19 +276,27 @@ func TestHardwareExperimentKeepsValidationOwedDespiteExternalClaim(t *testing.T)
 	}
 }
 
-func TestRoutineAreaCannotRelaxAssessmentAndStandingWorkKeepsTheDefault(t *testing.T) {
-	s, e, task, _, a := attentionFixture(t)
-	a.CompletionMode = "routine"
-	var err error
-	a, err = s.saveArea(a, a.Revision, "human:owner")
+func delegatedWorker(t *testing.T, e *Engine, root Run, agent string) Run {
+	t.Helper()
+	raw, err := call(t, e, root, "adc_delegate", map[string]any{"Agent": agent, "Title": "Work for " + agent, "Prompt": "Use fixture evidence for " + agent})
 	must(t, err)
-	task.Completion = &CompletionPolicy{Mode: "routine", Version: 1}
-	if routineCompletion(task) || e.attentionComplete(task) == nil {
-		t.Fatal("routine area weakened assessment review")
-	}
+	var r Run
+	must(t, json.Unmarshal([]byte(raw), &r))
+	setRunning(t, e.Store, &r)
+	return r
+}
+func passReviewedRun(t *testing.T, e *Engine, r Run) {
+	t.Helper()
+	r.State = "complete"
+	must(t, e.Store.Put("run", r.Org, r.Task, r.State, r.ID, r))
+	rev := Review{ID: ID(), Org: r.Org, Task: r.Task, Target: r.ID, Revision: e.revision(r), Model: "claude-opus-5", Verdict: "pass"}
+	must(t, e.Store.Put("review", r.Org, r.Task, "pass", rev.ID, rev))
+}
+func TestStandingWorkKeepsTheDefaultPolicy(t *testing.T) {
+	s, e, task, _, a := routineFixture(t)
 	// Standing-work occurrences take the default, never a later area edit.
 	a.CompletionMode = "reviewed"
-	_, err = s.saveArea(a, a.Revision, "human:owner")
+	_, err := s.saveArea(a, a.Revision, "human:owner")
 	must(t, err)
 	legacy := Assignment{Org: task.Org, Area: a.ID, Owner: task.Owner, Creator: task.Creator, Account: task.Account, Schedule: "legacy-approved", Title: "Legacy standing check"}
 	writes, err := e.assignmentWrites(legacy)

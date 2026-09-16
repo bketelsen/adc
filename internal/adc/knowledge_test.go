@@ -95,7 +95,7 @@ func TestKnowledgePublicPreviewAndAgentBoundary(t *testing.T) {
 	}
 }
 
-func TestDiscoveryBudgetAndNoRecursiveAttention(t *testing.T) {
+func TestDiscoveryBudgetAndNoRecursiveFollowups(t *testing.T) {
 	s, e, task, r, a := ownershipFixture(t)
 	writes, err := e.discoveryWrites(a, Assignment{ID: "discover", Account: task.Account, Creator: task.Creator, Prompt: "Inspect the fixture facts only; leave dormant work alone."})
 	must(t, err)
@@ -115,7 +115,7 @@ func TestDiscoveryBudgetAndNoRecursiveAttention(t *testing.T) {
 	}
 	current.Activations = 24
 	must(t, s.Put("run", current.Org, current.Task, current.State, current.ID, current))
-	if e.attentionCapacity(d) {
+	if e.withinBudget(d) {
 		t.Fatal("budget available for 25th activation")
 	}
 	e.boundDiscovery()

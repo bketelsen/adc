@@ -150,7 +150,6 @@ func (e *Engine) tick(ctx context.Context) {
 	defer s.mu.Unlock()
 	e.dispatchObligations(time.Now().UTC())
 	e.boundDiscovery()
-	e.boundAttentionCycles(time.Now().UTC())
 	e.dispatchOwnerRequests()
 	e.dispatchSchedules(time.Now())
 	e.dispatchPlans()
@@ -257,7 +256,7 @@ func (e *Engine) tick(ctx context.Context) {
 			if s.Get(r.Task, &t) != nil || t.State == "paused" || t.State == "cancelled" || t.State == "ready" {
 				continue
 			}
-			if !e.attentionRunCapacity(t, r) {
+			if !e.withinBudget(t) {
 				continue
 			}
 			a, accountErr := s.runAccount(t, r)
@@ -296,11 +295,7 @@ func (e *Engine) tick(ctx context.Context) {
 			r.LastStarted = now()
 			r.Error = ""
 			r.NextAt = ""
-			if t.Attention != nil && t.AttentionStarted == "" {
-				t.AttentionStarted = now()
-			}
 			t.State = "running"
-			// Claim and first attention timestamp survive interruption together.
 			if err := s.Batch(Write{"run", r.Org, r.Task, r.State, r.ID, r}, Write{"assignment", t.Org, "", t.State, t.ID, t}); err != nil {
 				continue
 			}
@@ -328,7 +323,6 @@ func (e *Engine) revision(r Run) string {
 	h.Write(code)
 	h.Write(e.milestoneRevision(r))
 	h.Write(e.observationRevision(r))
-	h.Write(e.ownerDeliverableRevision(r))
 	h.Write(e.completionEvidenceRevision(r))
 	if v := e.Store.integrationEvidence(r.ID); v.ID != "" {
 		b, _ := json.Marshal(v)
@@ -669,13 +663,6 @@ func (e *Engine) assignmentWrites(t Assignment, bootstrap ...Agent) ([]Write, er
 	if err := s.snapshotCompletion(&t); err != nil {
 		return nil, err
 	}
-	if t.Attention != nil {
-		var err error
-		t, err = e.prepareAttention(t)
-		if err != nil {
-			return nil, err
-		}
-	}
 	var agent Agent
 	if len(bootstrap) == 1 {
 		agent = bootstrap[0]
@@ -841,7 +828,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return d, nil
 		}),
-		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence, suggested owner agent ID and optional dependencies; SourceDocument pins an exact document ID. To revise a pending proposal supply its ID and Revision with the full fields. Recurring work needs Cadence {Frequency interval|daily|weekly, IntervalMinutes (at least 15) or Timezone, At HH:MM, Weekday 0–6} plus Validation and Rollback plans; omit Attention unless proposing a new recurring owner assessment program. Proposals grant no execution permission and only humans accept them. Not for corrections already authorized here.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_propose_work", "Propose one bounded follow-up or recurring task for the shared human review queue. Supply title, rationale, scope, completion criteria, evidence, suggested owner agent ID and optional dependencies; SourceDocument pins an exact document ID. To revise a pending proposal supply its ID and Revision with the full fields. Recurring work needs Cadence {Frequency interval|daily|weekly, IntervalMinutes (at least 15) or Timezone, At HH:MM, Weekday 0–6} plus Validation and Rollback plans. Proposals grant no execution permission and only humans accept them. Not for corrections already authorized here.", func(p proposalInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -850,7 +837,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.proposeWork(r, p)
 		}),
-		copilot.DefineTool("adc_status", "Read durable assignment state without blocking. View=coordination lists current blockers and plan counts; decisions lists human answers (ID for one); step with ID gives a step's gates; summary lists runs; run with ID returns one full run; review returns your review target, or one review by ID; assessment, connections, proposals and documents give focused evidence. Offset pages results. Omit View only for the full legacy snapshot.", func(p statusInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_status", "Read durable assignment state without blocking. View=coordination lists current blockers and plan counts; decisions lists human answers (ID for one); step with ID gives a step's gates; summary lists runs; run with ID returns one full run; review returns your review target, or one review by ID; connections, proposals and documents give focused evidence. Offset pages results. Omit View only for the full legacy snapshot.", func(p statusInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -866,7 +853,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			for i := range docs {
 				docs[i].Content = ""
 			}
-			return map[string]any{"completion_evidence": e.completionEvidence(r), "completion_policy": completionPolicy(task), "assessment": e.assessmentContext(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
+			return map[string]any{"completion_evidence": e.completionEvidence(r), "completion_policy": completionPolicy(task), "owner_coordination": e.requestContext(r), "owner": e.ownerContext(r), "observation": e.obligationObservation(r), "decisions": taskDecisions(s, r.Task), "plan": e.inspectPlan(s.taskPlan(r.Task)), "review_brief": e.reviewerBrief(r), "runs": taskRuns(s, r.Task), "readiness": taskReadiness(s, r.Task), "resources": taskResources(s, r.Task), "documents": docs, "review_needed": e.reviewNeeds(r.Task), "connections": connectionAccess(s, r), "proposals": list[WorkProposal](s, "proposal", r.Org), "document_catalog": documentCatalog(s, r.Org)}, nil
 		}),
 		copilot.DefineTool("adc_message", "Send collaboration evidence to an existing active ADC run in this assignment. Use its Run ID from adc_status. The message is persisted and delivered at the next turn boundary; it grants no authority and is not human approval. Messages arriving after completion return its status without restarting it. Delegate a new bounded follow-up for further action.", func(p struct{ Run, Message string }, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
@@ -903,7 +890,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			return e.Reassign(parent, p.Run, p.Agent, p.Reason)
 		}),
 		copilot.DefineTool("adc_delegate", "Delegate a bounded task to an existing agent, or to a temporary worker using a category's model default. Set ReviewOf to a run ID to request an independent review of it (your own run ID to be reviewed after you finish). Declare RequiredTools connection IDs the worker needs and optional Tools to narrow your grants. Optional Preflight declares Commands, Models, Repositories {Connection, Owner, Repository, Write} and isolated Directories/Ports; ADC holds dispatch on missing prerequisites without a model slot. Use adc_wait afterwards.", func(p struct {
-			AttentionStage                           string
 			Agent, Category, Title, Prompt, ReviewOf string
 			Tools                                    []string
 			RequiredTools                            []string
@@ -960,7 +946,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					continue
 				}
 				if p.ReviewOf == "" {
-					if (existing.Prompt == p.Prompt || existing.Prompt == p.Prompt+attentionScanInstructions || existing.Prompt == p.Prompt+verificationInstructions) && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
+					if (existing.Prompt == p.Prompt || existing.Prompt == p.Prompt+verificationInstructions) && samePreflight(existing.Preflight, p.Preflight) && Subset(p.RequiredTools, existing.Tools) {
 						return existing, nil
 					}
 				} else {
@@ -1005,35 +991,8 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 					r.ReviewedRevision = e.revision(target)
 				}
 			}
-			if assignment.Attention != nil {
-				if !attentionStage(p.AttentionStage) {
-					return Run{}, fmt.Errorf("AttentionStage must be scan, investigate or review")
-				}
-				r.AttentionStage = p.AttentionStage
-				if r.AttentionStage == "" {
-					r.AttentionStage = parent.AttentionStage
-				}
-				if r.AttentionStage == "" {
-					r.AttentionStage = "investigate"
-				}
-				if r.ReviewOf != "" {
-					r.AttentionStage = "review"
-				}
-				if r.AttentionStage == "review" && r.ReviewOf == "" {
-					return Run{}, fmt.Errorf("review stage requires an independent ReviewOf target")
-				}
-				if parent.Parent != "" && r.ReviewOf == "" && r.AttentionStage != parent.AttentionStage {
-					return Run{}, fmt.Errorf("only the accountable supervisor allocates investigation stages")
-				}
-			}
-			if assignment.Attention != nil && e.attentionStageRemaining(assignment, r) <= 0 {
-				return nil, fmt.Errorf("the %s stage has spent its approved activation budget; retain unknowns or finish within remaining scope", runAttentionStage(r))
-			}
 			if assignment.Obligation != "" && r.ReviewOf == "" {
 				r.Prompt += verificationInstructions
-			}
-			if assignment.Attention != nil && r.AttentionStage == "scan" && r.ReviewOf == "" {
-				r.Prompt += attentionScanInstructions
 			}
 			r.Workspace = filepath.Join(s.Dir, "workspaces", r.Org, r.Task, r.ID)
 			err = s.Put("run", r.Org, r.Task, r.State, r.ID, r)
@@ -1209,9 +1168,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			if r.ReviewOf != "" {
 				return "", fmt.Errorf("use adc_review")
 			}
-			if err := e.attentionWorkerComplete(assignment, r); err != nil {
-				return "", err
-			}
 			if missing := e.milestoneMissing(r); missing != "" {
 				return "", fmt.Errorf("%s; record concrete evidence or wait for human evidence before finishing", missing)
 			}
@@ -1294,9 +1250,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 				if routineCompletion(task) && !e.routineEvidenceComplete(task) {
 					return "", fmt.Errorf("nothing concrete is on record: register code with adc_code, save a document with adc_document, or record observed evidence with adc_evidence before finishing")
 				}
-				if err := e.attentionComplete(task); err != nil {
-					return "", err
-				}
 				task.State = "ready"
 				task.Output = p.Result
 				writes = append(writes, Write{"assignment", task.Org, "", task.State, task.ID, task})
@@ -1327,7 +1280,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)
 	tools = append(tools, e.ownershipTools(original)...)
-	tools = append(tools, e.attentionTools(original)...)
 	tools = append(tools, e.completionTools(original)...)
 	tools = append(tools, e.ownerRequestTools(original)...)
 	// Offer each tool only to the runs that can use it: plan authoring to the

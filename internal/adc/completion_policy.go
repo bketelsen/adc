@@ -41,7 +41,7 @@ func validCompletionMode(mode string) bool {
 	return mode == "" || mode == "reviewed" || mode == "routine"
 }
 func routineCompletion(t Assignment) bool {
-	return completionPolicy(t).Mode == "routine" && t.Attention == nil
+	return completionPolicy(t).Mode == "routine"
 }
 func (s *Store) snapshotCompletion(t *Assignment) error {
 	if t.Completion == nil {
@@ -66,7 +66,7 @@ func (e *Engine) requiresIndependentReview(t Assignment, r Run) bool {
 	if routineCompletion(t) {
 		return false
 	}
-	if len(r.Code) > 0 || e.completionEvidence(r).ID != "" || r.Category == "implementation" || e.obligationObservation(r).ID != "" || e.hasOwnerDeliverable(r) {
+	if len(r.Code) > 0 || e.completionEvidence(r).ID != "" || r.Category == "implementation" || e.obligationObservation(r).ID != "" {
 		return true
 	}
 	for _, d := range taskDocs(e.Store, t.ID) {
@@ -149,7 +149,7 @@ func completionInstructions(t Assignment) string {
 		}
 		return text
 	}
-	if t.Kind == "proposal" || t.Attention != nil {
+	if t.Kind == "proposal" {
 		return ""
 	}
 	return "\nCOMPLETION POLICY — REVIEWED: A human selected mandatory independent review for this work. Every run that registers code, saves a deliverable document or performs implementation needs a passing review from a different model family at its final revision. The accountable supervisor does not finish its own code or documents: delegate finalization to a specialist worker and obtain that worker's independent review. Execution-plan steps name a designated reviewer. After review findings, correct and resubmit autonomously."

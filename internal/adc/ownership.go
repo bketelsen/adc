@@ -214,7 +214,7 @@ func (e *Engine) registerFollowup(r Run, p followupInput, at time.Time) (Obligat
 	if s.Get(p.Area, &area) != nil || area.Org != r.Org || area.Owner != r.Agent || r.ReviewOf != "" {
 		return Obligation{}, fmt.Errorf("only this area's permanent owner may register its follow-up")
 	}
-	if s.Get(r.Task, &task) != nil || (task.Obligation != "" || task.Kind == "owner-discovery" || task.Attention != nil) {
+	if s.Get(r.Task, &task) != nil || (task.Obligation != "" || task.Kind == "owner-discovery") {
 		return Obligation{}, fmt.Errorf("follow-up work cannot recursively create further follow-ups; retain the existing obligation")
 	}
 	if !planKey.MatchString(p.Key) || !boundedText(p.Outcome, 1000) || !boundedText(p.Criteria, 2000) || !boundedText(p.Basis, 2000) {
@@ -251,8 +251,6 @@ func (e *Engine) registerFollowup(r Run, p followupInput, at time.Time) (Obligat
 	template := task
 	policy := completionPolicy(task)
 	template.Completion = &policy
-	template.Attention = nil
-	template.AttentionStarted = ""
 	template.Area = area.ID
 	template.Output, template.State = "", ""
 	template.ID, template.Obligation, template.Schedule, template.ScheduledFor, template.Proposal = "", id, "", "", ""
@@ -357,9 +355,6 @@ func (s *Store) obligationSourceProblem(o Obligation) string {
 }
 
 func (s *Store) obligationRunProblem(t Assignment) string {
-	if reason := s.attentionRunProblem(t); reason != "" {
-		return reason
-	}
 	if t.Obligation == "" {
 		return ""
 	}
@@ -388,7 +383,7 @@ func (e *Engine) dispatchObligations(at time.Time) {
 			o.State, o.Note = "blocked", problem+"; obligation retained for owner reassessment"
 		} else if o.Task != "" {
 			var task Assignment
-			activations, running := e.attentionSpent(o.Task)
+			activations, running := e.budgetSpent(o.Task)
 			_ = s.Get(o.Task, &task)
 			if activations >= 48 && !running && task.State != "ready" {
 				e.holdObligationTask(o.Task)

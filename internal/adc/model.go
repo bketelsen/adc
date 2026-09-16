@@ -21,8 +21,6 @@ type Agent struct {
 type Assignment struct {
 	AreaCreation                                                            bool
 	Completion                                                              *CompletionPolicy
-	Attention                                                               *AttentionPolicy
-	AttentionStarted                                                        string
 	Area                                                                    string
 	Obligation                                                              string
 	ConstrainCapabilities                                                   bool
@@ -39,7 +37,6 @@ type Assignment struct {
 }
 type Run struct {
 	WaitAssessment                                                                                                                    string
-	AttentionStage                                                                                                                    string
 	CandidateRevision, ReviewStage                                                                                                    string
 	Preflight                                                                                                                         *PreflightSpec
 	Superseded                                                                                                                        bool
