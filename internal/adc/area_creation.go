@@ -66,7 +66,7 @@ func (e *Engine) areaProposalTool(original Run) copilot.Tool {
 			return nil, fmt.Errorf("active area-creation conversation required")
 		}
 		if p.CompletionMode == "" {
-			p.CompletionMode = "reviewed"
+			p.CompletionMode = "routine"
 		}
 		brief := "Create the area “" + p.Name + "” with the proposed owner and boundaries. This creates context only; it grants no access and starts no scheduled work."
 		return e.submitDecision(r, decisionInput{Kind: "area-proposal", Question: p.Intent, Brief: brief, Replaces: p.Replaces, ProposedArea: &p.AreaSpec})

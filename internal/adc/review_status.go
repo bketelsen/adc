@@ -9,7 +9,7 @@ func (e *Engine) reviewNeeds(task string) []map[string]string {
 		if r.Superseded || r.Parent == "" || r.Category == "review" || r.State != "complete" {
 			continue
 		}
-		if !e.requiresIndependentReview(t, r) {
+		if !e.requiresIndependentReview(t, r) && !e.publicationReviewNeeded(t, r) {
 			continue
 		}
 		if !e.hasCurrentReview(r, reviews) {

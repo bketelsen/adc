@@ -8,7 +8,11 @@ import (
 )
 
 // Policies are small named contracts, not arbitrary workflow expressions.
-// Nil on historical work always means reviewed; defaults cannot weaken it.
+// New work defaults to routine: the accountable owner finishes on registered
+// code, saved documents or observed evidence, and the human reviews the
+// result. Reviewed is the opt-in contract with mandatory cross-family review.
+// Nil on historical work always means reviewed; a stored record never changes
+// meaning because the default moved.
 type CompletionPolicy struct {
 	Mode    string
 	Version int
@@ -24,6 +28,15 @@ func completionPolicy(t Assignment) CompletionPolicy {
 	}
 	return *t.Completion
 }
+
+// selectedCompletion turns an explicit form choice into a policy; an empty
+// choice leaves the area default (or routine) to snapshotCompletion.
+func selectedCompletion(mode string) *CompletionPolicy {
+	if mode == "" {
+		return nil
+	}
+	return &CompletionPolicy{Mode: mode, Version: 1}
+}
 func validCompletionMode(mode string) bool {
 	return mode == "" || mode == "reviewed" || mode == "routine"
 }
@@ -32,7 +45,7 @@ func routineCompletion(t Assignment) bool {
 }
 func (s *Store) snapshotCompletion(t *Assignment) error {
 	if t.Completion == nil {
-		p := CompletionPolicy{Mode: "reviewed", Version: 1}
+		p := CompletionPolicy{Mode: "routine", Version: 1}
 		if t.Area != "" && t.Obligation == "" && t.Schedule == "" {
 			var a Area
 			if s.Get(t.Area, &a) != nil || a.Org != t.Org {
@@ -50,15 +63,10 @@ func (s *Store) snapshotCompletion(t *Assignment) error {
 	return nil
 }
 func (e *Engine) requiresIndependentReview(t Assignment, r Run) bool {
-	// A routine responsibility never weakens registered code or planned work.
-	if len(r.Code) > 0 {
-		return true
-	}
 	if routineCompletion(t) {
-		_, step, ok := e.plannedStep(r)
-		return ok && step.Key != ""
+		return false
 	}
-	if e.completionEvidence(r).ID != "" || r.Category == "implementation" || e.obligationObservation(r).ID != "" || e.hasOwnerDeliverable(r) {
+	if len(r.Code) > 0 || e.completionEvidence(r).ID != "" || r.Category == "implementation" || e.obligationObservation(r).ID != "" || e.hasOwnerDeliverable(r) {
 		return true
 	}
 	for _, d := range taskDocs(e.Store, t.ID) {
@@ -107,23 +115,44 @@ func (e *Engine) recordCompletionEvidence(r Run, summary, reference string, revi
 	}
 	return v, e.Store.Batch(writes...)
 }
+
+// Routine completion needs something concrete on record: registered code, a
+// saved document, or observed evidence. A bare completion message is not it.
 func (e *Engine) routineEvidenceComplete(t Assignment) bool {
+	authored := map[string]bool{}
+	for _, d := range taskDocs(e.Store, t.ID) {
+		authored[d.Run] = true
+	}
 	for _, r := range taskRuns(e.Store, t.ID) {
 		// The active supervisor may provide its own evidence before finishing.
 		if r.Superseded || r.ReviewOf != "" || r.State == "cancelled" || (r.State != "complete" && (r.Parent != "" || r.State != "running")) {
 			continue
 		}
-		if e.completionEvidence(r).ID != "" || e.obligationObservation(r).ID != "" {
+		if len(r.Code) > 0 || authored[r.ID] || e.completionEvidence(r).ID != "" || e.obligationObservation(r).ID != "" {
 			return true
 		}
 	}
 	return false
 }
+
+// Draft PR delivery is the one place routine work still needs an independent
+// cross-family review: the exact commit ADC publishes must have been checked
+// by a different model family. See github_delivery.go.
+func (e *Engine) publicationReviewNeeded(t Assignment, r Run) bool {
+	return t.Publication && len(r.Code) > 0 && r.ReviewOf == "" && !r.Superseded && r.State != "cancelled"
+}
 func completionInstructions(t Assignment) string {
-	if !routineCompletion(t) {
+	if routineCompletion(t) {
+		text := "\nCOMPLETION POLICY — ROUTINE: Do the work and finish on concrete evidence: registered code (adc_code), a saved document (adc_document) or observed verification (adc_evidence; adc_obligation_result for a linked verification). No independent model review is required for code, documents or plan steps; the human reviews the result. Do small work yourself; delegate when parallelism or a different specialty helps. Optional expert review is available with adc_delegate ReviewOf. A promise, external claim or inability report is not evidence."
+		if t.Publication {
+			text += " Draft PR publication is the exception: the exact commit needs one passing cross-family review before ADC delivers it, so arrange that review for the run that registered the code."
+		}
+		return text
+	}
+	if t.Kind == "proposal" || t.Attention != nil {
 		return ""
 	}
-	return "\nCOMPLETION POLICY — ROUTINE EVIDENCE: This responsibility was explicitly configured by a human for evidence-based completion. Achieve the requested outcome, record actual observed verification using adc_evidence (or adc_obligation_result for a linked verification), then finish. The accountable owner can perform and verify simple work directly. No separate QA document or mandatory independent review is needed for routine observations, internal notes or acknowledgments. Registered code artifacts and execution-plan steps still require their independent cross-family gates. Optional expert review remains available for uncertainty. A proposed future action, external claim or inability report is not observed success. Keep remaining obligations open; evidence is not new authority. This policy overrides generic instructions requiring a separate reviewer for every ordinary document or task."
+	return "\nCOMPLETION POLICY — REVIEWED: A human selected mandatory independent review for this work. Every run that registers code, saves a deliverable document or performs implementation needs a passing review from a different model family at its final revision. The accountable supervisor does not finish its own code or documents: delegate finalization to a specialist worker and obtain that worker's independent review. Execution-plan steps name a designated reviewer. After review findings, correct and resubmit autonomously."
 }
 func (e *Engine) completionTools(original Run) []copilot.Tool {
 	var task Assignment

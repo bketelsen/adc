@@ -64,8 +64,10 @@ func (w *Web) executionPlanAction(r *http.Request, page Page) error {
 		if _, err := w.Engine.planRun(task, root, step, step.Worker, false); err != nil {
 			return err
 		}
-		if _, err := w.Engine.planRun(task, root, step, step.Verifier, true); err != nil {
-			return err
+		if step.Verifier.ID != "" {
+			if _, err := w.Engine.planRun(task, root, step, step.Verifier, true); err != nil {
+				return err
+			}
 		}
 	}
 	p.State = "active"

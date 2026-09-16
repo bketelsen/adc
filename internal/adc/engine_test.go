@@ -31,7 +31,9 @@ func fixture(t *testing.T) (*Store, *Engine, Assignment, Run) {
 	for _, a := range []Agent{boss, dev, qa} {
 		must(t, s.Put("agent", a.Org, "", "", a.ID, a))
 	}
-	task := Assignment{ID: "task", Org: "org", Owner: "boss", Creator: "owner", Account: "account", Title: "Fixture", Prompt: "Finish a fixture"}
+	// The shared fixture keeps the reviewed contract so the review, handoff and
+	// plan gates stay exercised; routine behavior has its own fixtures.
+	task := Assignment{ID: "task", Org: "org", Owner: "boss", Creator: "owner", Account: "account", Title: "Fixture", Prompt: "Finish a fixture", Completion: &CompletionPolicy{Mode: "reviewed", Version: 1}}
 	must(t, e.CreateAssignment(task))
 	must(t, s.Get(task.ID, &task))
 	r := taskRuns(s, task.ID)[0]

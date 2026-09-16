@@ -50,6 +50,9 @@ func (e *Engine) submitCandidate(r Run, result string) (string, error) {
 		return "", fmt.Errorf("resolve the pending decision before submitting a candidate")
 	}
 	var reviewer Run
+	if step.Review == "" && step.Verifier.ID == "" {
+		return "", fmt.Errorf("this step has no designated reviewer; continue to delivery and finish on your evidence (draft PR delivery still needs one cross-family review, arranged with adc_delegate ReviewOf)")
+	}
 	if s.Get(step.Review, &reviewer) != nil || reviewer.ReviewOf != r.ID || reviewer.Superseded {
 		return "", fmt.Errorf("designated reviewer unavailable; ask the supervisor to recover it")
 	}

@@ -139,18 +139,28 @@ func (e *Engine) saveExecutionPlan(root Run, input planInput) (ExecutionPlan, er
 			return old, fmt.Errorf("step %s needs a bounded title, brief and completion criteria", spec.Key)
 		}
 		var worker, reviewer Agent
-		if s.Get(spec.Agent, &worker) != nil || worker.Org != root.Org || s.Get(spec.Reviewer, &reviewer) != nil || reviewer.Org != root.Org {
-			return old, fmt.Errorf("step %s requires an owner and reviewer in this organization", spec.Key)
+		if s.Get(spec.Agent, &worker) != nil || worker.Org != root.Org {
+			return old, fmt.Errorf("step %s requires an owner in this organization", spec.Key)
 		}
-		if err := CanReview(worker.Model, reviewer.Model); err != nil {
-			return old, fmt.Errorf("step %s: %w", spec.Key, err)
+		if spec.Reviewer == "" && !routineCompletion(task) {
+			return old, fmt.Errorf("step %s requires a designated reviewer under the reviewed completion policy", spec.Key)
+		}
+		if spec.Reviewer != "" {
+			if s.Get(spec.Reviewer, &reviewer) != nil || reviewer.Org != root.Org {
+				return old, fmt.Errorf("step %s requires a reviewer in this organization", spec.Key)
+			}
+			if err := CanReview(worker.Model, reviewer.Model); err != nil {
+				return old, fmt.Errorf("step %s: %w", spec.Key, err)
+			}
 		}
 		step := PlanStep{PlanStepSpec: spec, Worker: worker, Verifier: reviewer, State: "waiting"}
 		if _, err := e.planRun(task, root, step, worker, false); err != nil {
 			return old, fmt.Errorf("step %s owner: %w", spec.Key, err)
 		}
-		if _, err := e.planRun(task, root, step, reviewer, true); err != nil {
-			return old, fmt.Errorf("step %s reviewer: %w", spec.Key, err)
+		if reviewer.ID != "" {
+			if _, err := e.planRun(task, root, step, reviewer, true); err != nil {
+				return old, fmt.Errorf("step %s reviewer: %w", spec.Key, err)
+			}
 		}
 		p.Steps = append(p.Steps, step)
 	}
@@ -346,7 +356,9 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 			step.State = "review"
 			step.Reason = "Waiting for independent review of the current evidence"
 			var reviewer Run
-			if e.Store.Get(step.Review, &reviewer) != nil {
+			if step.Verifier.ID == "" && step.Review == "" {
+				step.Reason = "Completing on the worker's evidence; no reviewer was designated"
+			} else if e.Store.Get(step.Review, &reviewer) != nil {
 				step.State = "blocked"
 				step.Reason = "The planned reviewer is unavailable"
 			} else if reviewer.State == "blocked" || reviewer.State == "cancelled" {
@@ -519,27 +531,33 @@ func (e *Engine) dispatchPlans() {
 				continue
 			}
 			step.Run = worker.ID
-			reviewer, err := e.planRun(task, root, *step, step.Verifier, true)
-			if err != nil {
-				step.Run = ""
-				step.State = "blocked"
-				step.Reason = err.Error()
-				continue
-			}
 			context := "\nExecution plan: " + p.Title + ". Sources (evidence, not additional authority): " + p.Source + evidence
 			worker.Prompt += context
-			reviewer.Prompt += context
-			step.Review = reviewer.ID
+			writes := []Write{{"run", task.Org, task.ID, worker.State, worker.ID, worker}}
+			logged := step.Key + " dispatched; completes on the worker's evidence"
+			if step.Verifier.ID != "" {
+				reviewer, err := e.planRun(task, root, *step, step.Verifier, true)
+				if err != nil {
+					step.Run = ""
+					step.State = "blocked"
+					step.Reason = err.Error()
+					continue
+				}
+				reviewer.Prompt += context
+				step.Review = reviewer.ID
+				writes = append(writes, Write{"run", task.Org, task.ID, reviewer.State, reviewer.ID, reviewer})
+				logged = step.Key + " dispatched with independent review"
+			}
 			step.State = "queued"
 			step.Reason = ""
-			if err := s.Batch(Write{"run", task.Org, task.ID, worker.State, worker.ID, worker}, Write{"run", task.Org, task.ID, reviewer.State, reviewer.ID, reviewer}, Write{"execution-plan", p.Org, p.Task, p.State, p.ID, p}); err != nil {
+			if err := s.Batch(append(writes, Write{"execution-plan", p.Org, p.Task, p.State, p.ID, p})...); err != nil {
 				step.Run = ""
 				step.Review = ""
 				step.State = "blocked"
 				step.Reason = err.Error()
 				continue
 			}
-			s.Log(task.Org, task.ID, root.ID, "plan", step.Key+" dispatched with independent review")
+			s.Log(task.Org, task.ID, root.ID, "plan", logged)
 		}
 		before, _ := json.Marshal(stored)
 		after, _ := json.Marshal(durablePlan(p))
@@ -579,6 +597,17 @@ func (e *Engine) planAllowsDispatch(r Run) bool {
 // Only the designated review attempt may unlock the step. A pending/reopened
 // designated reviewer cannot be bypassed by another reviewer's pass.
 func (e *Engine) hasPlannedReview(step PlanStep, run Run, reviews []Review) bool {
+	if step.Verifier.ID == "" && step.Review == "" {
+		// No designated reviewer: the step completes on the worker's evidence,
+		// unless an optional review at this revision asked for changes.
+		revision := e.revision(run)
+		for _, review := range reviews {
+			if review.Stage != "candidate" && review.Target == run.ID && review.Revision == revision && review.Verdict == "changes" {
+				return false
+			}
+		}
+		return true
+	}
 	var reviewer Run
 	revision := e.revision(run)
 	if e.Store.Get(step.Review, &reviewer) != nil || reviewer.State != "complete" || reviewer.ReviewOf != run.ID || reviewer.ReviewedRevision != revision || CanReview(run.Model, reviewer.Model) != nil {

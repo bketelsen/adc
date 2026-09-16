@@ -79,7 +79,7 @@ func (s *Store) runResources(run string) RunResources {
 func (e *Engine) readinessModels(r Run) []Run {
 	runs := []Run{r}
 	if r.Preflight != nil && r.Preflight.Models && r.ReviewOf == "" {
-		if _, step, ok := e.plannedStep(r); ok {
+		if _, step, ok := e.plannedStep(r); ok && step.Verifier.ID != "" {
 			var reviewer Run
 			if e.Store.Get(step.Review, &reviewer) == nil && reviewer.Org == r.Org && reviewer.Task == r.Task && reviewer.ReviewOf == r.ID && reviewer.Agent == step.Verifier.ID {
 				runs = append(runs, reviewer)

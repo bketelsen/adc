@@ -665,7 +665,9 @@ func (w *Web) action(r *http.Request, p Page) error {
 		if f("title") == "" || f("prompt") == "" {
 			return errors.New("A title and requested outcome are required")
 		}
-		return w.Engine.CreateAssignment(Assignment{Area: f("area"), ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")})
+		t := Assignment{Area: f("area"), ID: ID(), Org: p.Org.ID, Title: f("title"), Prompt: f("prompt"), Owner: f("owner"), Account: f("account"), ExtraAccount: f("extra_account"), Creator: p.User.ID, Execution: f("execution")}
+		t.Completion = selectedCompletion(f("completion"))
+		return w.Engine.CreateAssignment(t)
 	case "/members":
 		var id string
 		if err := s.db.QueryRow(`SELECT id FROM users WHERE username=?`, strings.ToLower(f("username"))).Scan(&id); err != nil {
