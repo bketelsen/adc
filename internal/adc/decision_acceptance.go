@@ -1,6 +1,8 @@
 package adc
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strings"
@@ -25,6 +27,20 @@ func sameAcceptanceInput(input *decisionAcceptanceInput, pin *DecisionAcceptance
 	return input.Run == pin.Run && input.Requirement == pin.Requirement.Key
 }
 
+// A human approves what they were shown: the artifacts, the documents and the
+// observations recorded at the time. Any of those changing makes the pending
+// acceptance stale.
+func (e *Engine) approvalRevision(r Run) string {
+	h := sha256.New()
+	h.Write([]byte(e.artifactRevision(r)))
+	h.Write(e.milestoneRevision(r))
+	for _, d := range taskDocs(e.Store, r.Task) {
+		if d.Run == r.ID {
+			h.Write([]byte(d.ID + d.Content + fmt.Sprint(d.Revision)))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 func (e *Engine) pinDecisionAcceptance(requester Run, input decisionAcceptanceInput) (*DecisionAcceptance, error) {
 	var worker Run
 	if e.Store.Get(input.Run, &worker) != nil || worker.Org != requester.Org || worker.Task != requester.Task || worker.Superseded || worker.State == "cancelled" {
@@ -45,7 +61,7 @@ func (e *Engine) pinDecisionAcceptance(requester Run, input decisionAcceptanceIn
 		if old.ID != "" && !old.Withdrawn {
 			return nil, fmt.Errorf("this requirement already has human evidence; inspect it instead of requesting acceptance again")
 		}
-		return &DecisionAcceptance{Run: worker.ID, Plan: plan.ID, Step: step.Key, StepTitle: step.Title, PlanRevision: plan.Revision, EvidenceRevision: old.Revision, Requirement: req, Artifact: e.artifactRevision(worker)}, nil
+		return &DecisionAcceptance{Run: worker.ID, Plan: plan.ID, Step: step.Key, StepTitle: step.Title, PlanRevision: plan.Revision, EvidenceRevision: old.Revision, Requirement: req, Artifact: e.approvalRevision(worker)}, nil
 	}
 	return nil, fmt.Errorf("acceptance requirement is not declared on that step")
 }

@@ -48,7 +48,16 @@ func TestIntegrationObservedCommandAndSpoofBoundary(t *testing.T) {
 	if len(v.Checks) != 1 || v.Checks[0].Provenance != "adc-command" || !strings.Contains(v.Checks[0].Output, "fixture-observed") || e.milestoneMissing(r) != "" {
 		t.Fatal("actual command result not recorded", v)
 	}
+	// A changed tested combination stales the check; finishing re-runs it instead of blocking.
+	v, err = e.saveIntegration(r, integrationInput{Revision: v.Revision, Environment: []EnvironmentVersion{{Name: "os", Version: "v2"}}})
+	must(t, err)
+	if e.validationViews(r)[0].State != "stale" {
+		t.Fatal("environment change did not stale the observed check")
+	}
 	completePlanWorker(t, e, step)
+	if views := e.validationViews(r); views[0].State != "pass" || views[0].Result.Provenance != "adc-command" {
+		t.Fatal("stale command check was not re-run on finish", views[0].State)
+	}
 	reviewPlanStep(t, e, step, "pass")
 	if e.inspectPlan(s.taskPlan(r.Task)).Steps[0].State != "complete" {
 		t.Fatal("observed command did not complete through independent review")

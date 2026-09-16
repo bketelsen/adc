@@ -347,6 +347,28 @@ func (e *Engine) revision(r Run) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// dependencyRevision identifies what a dependent step actually consumes from a
+// prerequisite: its code, its documents and its recorded tested combination.
+// Result text, milestone observations and other evidence changes do not make
+// downstream work stale.
+func (e *Engine) dependencyRevision(r Run) string {
+	h := sha256.New()
+	h.Write([]byte(r.ID))
+	code, _ := json.Marshal(r.Code)
+	h.Write(code)
+	if v := e.Store.integrationEvidence(r.ID); v.ID != "" {
+		v.Revision, v.Checks = 0, nil
+		b, _ := json.Marshal(v)
+		h.Write(b)
+	}
+	for _, d := range list[Document](e.Store, "document", r.Org) {
+		if d.Run == r.ID {
+			h.Write([]byte(d.ID + d.Content + fmt.Sprint(d.Revision)))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 func (e *Engine) execute(ctx context.Context, r Run, t Assignment, a Account) {
 	s := e.Store
 	redact := Redactor{}
@@ -767,13 +789,13 @@ func (e *Engine) assignmentWrites(t Assignment, bootstrap ...Agent) ([]Write, er
 
 func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool {
 	s := e.Store
+	ctx := context.Background()
+	if len(contexts) > 0 {
+		ctx = contexts[0]
+	}
 	var scopedTask Assignment
 	_ = s.Get(original.Task, &scopedTask)
 	if scopedTask.Kind == "contribution-review" {
-		ctx := context.Background()
-		if len(contexts) > 0 {
-			ctx = contexts[0]
-		}
 		return e.contributionReviewTools(ctx, original)
 	}
 	active := func() (Run, error) {
@@ -1129,7 +1151,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 			return e.withdrawDecision(r, p.ID, p.Reason)
 		}),
-		copilot.DefineTool("adc_decision", "Ask a human for a concrete decision with one recommended action and a concise brief (what approval means and why; at most 1000 characters), supporting detail in Question, and optionally proposed_agents for a permanent team. Humans see Approve / Reject / Refine with notes. For a plan acceptance, set acceptance={run: current worker ID, requirement: human-evidence key}; ADC pins current artifacts and records the authenticated approval as milestone evidence automatically. Use this only for acceptance, not to claim unobserved facts or completed operational work. Do not ask the human to copy IDs or record the same approval in a second form. Include material consequences in the brief. To revise any pending decision, supply replaces with its decision ID and the complete revised fields. After rejection/refinement, submit a new decision rather than rewriting the resolved one. This preserves history and requires fresh human approval. For an action the agent should execute after approval, set action={Run, Action, Target, Reference, Validation, Rollback, optional Requirement}. Use the current worker or your direct child as executor. Approval queues that worker, who verifies the external outcome and calls adc_action_result to record any linked milestone automatically. Do not ask humans to merge, push or transcribe evidence themselves. This does not grant new tool access. Do not ask for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
+		copilot.DefineTool("adc_decision", "Ask a human one question with one recommended action: a concise Brief (what approval means and its consequences; at most 1000 characters) and supporting detail in Question. Humans answer Approve / Reject / Refine with notes, or in plain language. Any affirmative answer authorizes the recommended action and any negative answer declines it; act on the answer as given and never ask the human to restate it in a structured form, copy IDs, transcribe evidence, or run commands. Optional: proposed_agents for a permanent team; acceptance={run, requirement} to record approval as human-evidence for a plan step; action={Run, Action, Target, Reference, Validation, Rollback, optional Requirement} for an operation the named worker executes after approval and records with adc_action_result. To revise a pending decision supply replaces with its ID and the complete revised fields; after rejection submit a new decision. This grants no new tool access and is not for routine corrective work.", func(p decisionInput, _ copilot.ToolInvocation) (any, error) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -1211,6 +1233,7 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			return e.blockWork(r, p.Reason, p.Needed)
 		}),
 		copilot.DefineTool("adc_finish", "Finish only when the requested objective has been achieved, with a concrete result and verification evidence. A report explaining why the requested work could not be performed is a blocked outcome: use adc_blocked instead. The supervisor may finish only after children and any required independent reviews are complete. A promise to do work is not a result.", func(p struct{ Result string }, _ copilot.ToolInvocation) (string, error) {
+			e.rerunStaleCommandChecks(ctx, original.ID)
 			s.mu.Lock()
 			defer s.mu.Unlock()
 			r, err := active()
@@ -1338,10 +1361,6 @@ func (e *Engine) tools(original Run, contexts ...context.Context) []copilot.Tool
 			}
 		}
 		return filtered
-	}
-	ctx := context.Background()
-	if len(contexts) > 0 {
-		ctx = contexts[0]
 	}
 	tools = append(tools, e.integrationTools(ctx, original)...)
 	tools = append(tools, e.repairTools(original)...)

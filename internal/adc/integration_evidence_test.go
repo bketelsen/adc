@@ -177,11 +177,12 @@ func TestIntegrationConsumesExactUpstreamAndReviewBrief(t *testing.T) {
 			t.Fatal("review brief missing", want)
 		}
 	}
-	// An artifact document added after checks makes those checks stale.
+	// A document saved after checks does not stale them: the checks exercised code
+	// and the tested combination, not prose.
 	d := Document{ID: "new-artifact", Org: worker.Org, Task: worker.Task, Run: worker.ID, Content: "Changed integration instructions", Revision: 1}
 	must(t, s.Put("document", d.Org, d.Task, "", d.ID, d))
-	if e.validationViews(worker)[0].State != "stale" {
-		t.Fatal("document did not invalidate checks")
+	if e.validationViews(worker)[0].State != "pass" {
+		t.Fatal("document invalidated unrelated checks")
 	}
 	if len(list[IntegrationEvidence](s, "integration-evidence-history", worker.Org)) < 2 {
 		t.Fatal("replacement history missing")

@@ -871,7 +871,7 @@ func (w *Web) action(r *http.Request, p Page) error {
 					writes = append(writes, Write{"run", child.Org, child.Task, child.State, child.ID, child})
 				}
 			}
-			run.Prompt += "\nHUMAN DECISION from " + p.User.Name + ": " + d.Answer
+			run.Prompt += "\nHUMAN DECISION (final; read it plainly and act on it, do not ask for it in another form) from " + p.User.Name + ": " + d.Answer
 			if f("publish") == "on" && (d.Outcome == "approve" || d.Outcome == "") {
 				t.Publication = true
 			}

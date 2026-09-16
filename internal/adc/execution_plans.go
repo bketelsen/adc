@@ -121,6 +121,13 @@ func (e *Engine) saveExecutionPlan(root Run, input planInput) (ExecutionPlan, er
 		if err := validateRequirements(spec.Requirements); err != nil {
 			return old, fmt.Errorf("step %s: %w", spec.Key, err)
 		}
+		if routineCompletion(task) {
+			for _, req := range spec.Requirements {
+				if req.Kind == "human-evidence" {
+					return old, fmt.Errorf("step %s: human-evidence gates are not used under the routine policy; proceed on discoverable facts, and ask one plain-language adc_decision only for a genuine human choice", spec.Key)
+				}
+			}
+		}
 		if err := validatePreflight(spec.Preflight); err != nil {
 			return old, fmt.Errorf("step %s: %w", spec.Key, err)
 		}
@@ -369,7 +376,7 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 				step.State = "complete"
 				step.Reason = ""
 				states[step.Key] = true
-				revisions[step.Key] = run.ID + ":" + e.revision(run)
+				revisions[step.Key] = run.ID + ":" + e.dependencyRevision(run)
 			}
 		}
 		if missing := e.milestoneMissing(run); missing != "" && run.State == "complete" {
@@ -393,6 +400,12 @@ func (e *Engine) inspectPlan(p ExecutionPlan) ExecutionPlan {
 			}
 			for _, dep := range step.DependsOn {
 				stale := step.Run != "" && step.Inputs[dep] != revisions[dep]
+				if step.State == "complete" && step.Run != "" && !(states[dep] && stale) {
+					// Finished work is redone only when a prerequisite re-completed
+					// with different output. A reopened prerequisite or changed
+					// observation is visible on its own step, not undone here.
+					continue
+				}
 				if !states[dep] || stale {
 					states[step.Key] = false
 					if step.Run == "" {
@@ -516,8 +529,8 @@ func (e *Engine) dispatchPlans() {
 							eligible = false
 							break
 						}
-						step.Inputs[dep] = run.ID + ":" + e.revision(run)
-						evidence += fmt.Sprintf("\nPrerequisite %s: run %s, reviewed revision %s. Inspect its exact result/documents/code with adc_status before beginning.", dep, run.ID, step.Inputs[dep])
+						step.Inputs[dep] = run.ID + ":" + e.dependencyRevision(run)
+						evidence += fmt.Sprintf("\nPrerequisite %s: run %s, output revision %s. Inspect its exact result/documents/code with adc_status before beginning.", dep, run.ID, step.Inputs[dep])
 					}
 				}
 			}

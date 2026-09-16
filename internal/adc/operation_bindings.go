@@ -53,7 +53,7 @@ func (e *Engine) operationOwner(run Run) (ExecutionPlan, string, string, bool) {
 			if e.Store.Get(step.Run, &source) != nil {
 				return p, "", "", false
 			}
-			pins[step.Key] = source.ID + ":" + e.revision(source)
+			pins[step.Key] = source.ID + ":" + e.dependencyRevision(source)
 		}
 		b, _ := json.Marshal(pins)
 		return p, "supervisor", digest(string(b)), true
@@ -106,7 +106,7 @@ func (s *Store) validateOperationBinding(run Run, b OperationBinding) error {
 			continue
 		}
 		var source Run
-		if s.Get(upstream.Run, &source) != nil || (planEvidence == "" && step.Inputs[upstream.Key] != source.ID+":"+e.revision(source)) {
+		if s.Get(upstream.Run, &source) != nil || (planEvidence == "" && step.Inputs[upstream.Key] != source.ID+":"+e.dependencyRevision(source)) {
 			return fmt.Errorf("approved prerequisite evidence changed")
 		}
 		if err := verifyCode(source); err != nil {

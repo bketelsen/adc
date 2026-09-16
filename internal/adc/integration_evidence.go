@@ -94,22 +94,18 @@ func (s *Store) integrationEvidence(run string) IntegrationEvidence {
 	return v
 }
 
-// This pin deliberately excludes the completion message and validation results:
-// writing a result must not invalidate itself. It includes the declared artifacts,
-// inputs, environment and milestone observations that the result actually covers.
+// This pin covers what a check actually exercised: the registered code, the
+// recorded tested combination (repositories, consumed inputs, environment) and
+// the frozen prerequisite inputs. It deliberately excludes the completion
+// message and the check results themselves (writing a result must not
+// invalidate itself), and also documents and milestone observations, so a
+// note or a recorded release does not make a passing build stale.
 func (e *Engine) artifactRevision(r Run) string {
 	v := e.Store.integrationEvidence(r.ID)
 	v.ID, v.Org, v.Task, v.Run, v.Created = "", "", "", "", ""
 	v.Revision, v.Checks = 0, nil
-	docs := []Document{}
-	for _, d := range taskDocs(e.Store, r.Task) {
-		if d.Run == r.ID {
-			docs = append(docs, d)
-		}
-	}
-	sort.Slice(docs, func(i, j int) bool { return docs[i].ID < docs[j].ID })
 	_, step, _ := e.plannedStep(r)
-	b, _ := json.Marshal([]any{r.Code, docs, v, step.Inputs, e.milestoneRevision(r)})
+	b, _ := json.Marshal([]any{r.Code, v, step.Inputs})
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
 }
@@ -184,11 +180,90 @@ func (e *Engine) integrationMissing(r Run) string {
 		}
 	}
 	for _, check := range e.validationViews(r) {
+		if check.State == "stale" {
+			how := "re-run it and record the result with adc_check"
+			if check.Kind == "command" {
+				how = "re-run `" + check.Verifier + "` and record the result with adc_check (ADC re-runs protected command checks itself when you finish)"
+			}
+			return "Required check " + check.Key + " is stale because the artifacts changed since it was recorded; " + how
+		}
 		if check.State != "pass" {
 			return "Required check " + check.Key + " is " + check.State + "; inspect the evidence and correct or report the blocker"
 		}
 	}
 	return ""
+}
+
+// validateCheck runs one frozen command check in the protected workspace and
+// records the observed result. The command runs without the store lock.
+func (e *Engine) validateCheck(ctx context.Context, runID, key, artifactRevision string, revision int) (IntegrationEvidence, error) {
+	s := e.Store
+	s.mu.Lock()
+	r, err := e.integrationWorker(runID)
+	_, step, _ := e.plannedStep(r)
+	var req ValidationRequirement
+	for _, c := range step.Checks {
+		if c.Key == key {
+			req = c
+		}
+	}
+	if err == nil && (r.Execution != "protected" || req.Kind != "command" || e.artifactRevision(r) != artifactRevision || s.integrationEvidence(r.ID).Revision != revision) {
+		err = fmt.Errorf("protected execution, a frozen command and current artifact/evidence revisions are required")
+	}
+	if err == nil {
+		err = verifyCode(r)
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return IntegrationEvidence{}, err
+	}
+	output, exit, err := executeValidationCommand(ctx, r, req.Verifier)
+	if err != nil {
+		output += "\nExecution error: " + err.Error()
+		exit = -1
+	}
+	if strings.TrimSpace(output) == "" {
+		output = fmt.Sprintf("Command exited %d with no output", exit)
+	}
+	outcome := "failed"
+	if exit == 0 {
+		outcome = "pass"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return e.recordValidation(r, validationInput{Key: key, ArtifactRevision: artifactRevision, Revision: revision, Outcome: outcome, Output: clipped(output, 32000)}, true)
+}
+
+// rerunStaleCommandChecks re-executes protected command checks whose recorded
+// result no longer matches the current artifacts, instead of blocking the
+// worker on a check it already knows how to run. Failures stay recorded.
+func (e *Engine) rerunStaleCommandChecks(ctx context.Context, runID string) {
+	s := e.Store
+	s.mu.Lock()
+	r, err := e.integrationWorker(runID)
+	if err != nil || r.Execution != "protected" {
+		s.mu.Unlock()
+		return
+	}
+	type rerun struct {
+		key, pin string
+		revision int
+	}
+	pending := []rerun{}
+	pin := e.artifactRevision(r)
+	revision := s.integrationEvidence(r.ID).Revision
+	for _, check := range e.validationViews(r) {
+		if check.State == "stale" && check.Kind == "command" {
+			pending = append(pending, rerun{check.Key, pin, revision})
+		}
+	}
+	s.mu.Unlock()
+	for _, p := range pending {
+		if v, err := e.validateCheck(ctx, runID, p.key, p.pin, p.revision); err == nil {
+			revision = v.Revision
+			s.Log(r.Org, r.Task, r.ID, "validation", "Re-ran stale check "+p.key+" before finishing")
+		}
+	}
 }
 
 // All mutations are from the current, running planned worker. Old attempts and
@@ -255,7 +330,7 @@ func (e *Engine) saveIntegration(r Run, p integrationInput) (IntegrationEvidence
 				return old, fmt.Errorf("omitted steps have no admitted output to consume")
 			}
 			var source Run
-			if e.Store.Get(upstream.Run, &source) != nil || step.Inputs[dep.Step] != source.ID+":"+e.revision(source) {
+			if e.Store.Get(upstream.Run, &source) != nil || step.Inputs[dep.Step] != source.ID+":"+e.dependencyRevision(source) {
 				return old, fmt.Errorf("consumed input changed; wait for reconciliation")
 			}
 			for _, repo := range e.Store.integrationEvidence(source.ID).Repositories {
@@ -393,44 +468,11 @@ func (e *Engine) integrationTools(ctx context.Context, original Run) []copilot.T
 			defer s.mu.Unlock()
 			return e.recordValidation(original, p, false)
 		}),
-		copilot.DefineTool("adc_validate", "Execute a frozen command check Key inside the protected workspace and record its exit/output against ArtifactRevision and current Integration.Revision. Requires protected execution. No arbitrary replacement command. Timeout is 300 seconds. Use for inexpensive deterministic checks before finishing; failures remain inspectable and correctable. Command execution has the assignment's existing authority only, and is never retried automatically.", func(p struct {
+		copilot.DefineTool("adc_validate", "Execute a frozen command check Key inside the protected workspace and record its exit/output against ArtifactRevision and current Integration.Revision. Requires protected execution. No arbitrary replacement command. Timeout is 300 seconds. Use for inexpensive deterministic checks before finishing; failures remain inspectable and correctable. Command execution has the assignment's existing authority only. A stale command check is re-run automatically when you finish.", func(p struct {
 			Key, ArtifactRevision string
 			Revision              int
 		}, _ copilot.ToolInvocation) (any, error) {
-			s.mu.Lock()
-			r, err := e.integrationWorker(original.ID)
-			_, step, _ := e.plannedStep(r)
-			var req ValidationRequirement
-			for _, c := range step.Checks {
-				if c.Key == p.Key {
-					req = c
-				}
-			}
-			if err == nil && (r.Execution != "protected" || req.Kind != "command" || e.artifactRevision(r) != p.ArtifactRevision || s.integrationEvidence(r.ID).Revision != p.Revision) {
-				err = fmt.Errorf("protected execution, a frozen command and current artifact/evidence revisions are required")
-			}
-			if err == nil {
-				err = verifyCode(r)
-			}
-			s.mu.Unlock()
-			if err != nil {
-				return nil, err
-			}
-			output, exit, err := executeValidationCommand(ctx, r, req.Verifier)
-			if err != nil {
-				output += "\nExecution error: " + err.Error()
-				exit = -1
-			}
-			if strings.TrimSpace(output) == "" {
-				output = fmt.Sprintf("Command exited %d with no output", exit)
-			}
-			outcome := "failed"
-			if exit == 0 {
-				outcome = "pass"
-			}
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			return e.recordValidation(r, validationInput{Key: p.Key, ArtifactRevision: p.ArtifactRevision, Revision: p.Revision, Outcome: outcome, Output: clipped(output, 32000)}, true)
+			return e.validateCheck(ctx, original.ID, p.Key, p.ArtifactRevision, p.Revision)
 		}),
 	}
 }

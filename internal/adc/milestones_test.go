@@ -106,16 +106,17 @@ func TestMilestoneObservationReviewAndInvalidation(t *testing.T) {
 	if e.inspectPlan(s.taskPlan(r.Task)).Steps[0].State == "complete" {
 		t.Fatal("old review survived changed evidence")
 	}
-	var stale Run
-	must(t, s.Get(oldDependent, &stale))
-	if e.planAllowsDispatch(stale) {
-		t.Fatal("stale dependent dispatched")
+	var held Run
+	must(t, s.Get(oldDependent, &held))
+	if e.planAllowsDispatch(held) {
+		t.Fatal("dependent ran while its prerequisite was reopened")
 	}
 	reviewPlanStep(t, e, step, "pass")
 	planDispatch(e)
 	current := planStepByKey(t, s, "R2")
-	if current.Run == oldDependent || len(current.Attempts) != 1 {
-		t.Fatal("new evidence did not supersede dependent", current)
+	// A corrected observation is not a changed output: the dependent continues.
+	if current.Run != oldDependent || len(current.Attempts) != 0 || current.State == "blocked" {
+		t.Fatal("observation correction superseded dependent", current.State, current.Reason)
 	}
 	if len(list[MilestoneEvidence](s, "milestone-evidence-history", r.Org)) != 1 {
 		t.Fatal("evidence history lost")
@@ -192,10 +193,10 @@ func TestMilestoneHumanBoundaryAndResume(t *testing.T) {
 	if e.inspectPlan(s.taskPlan(r.Task)).State != "active" {
 		t.Fatal("withdrawal left plan complete")
 	}
-	var child Run
-	must(t, s.Get(dependent.Run, &child))
-	if e.planAllowsDispatch(child) {
-		t.Fatal("withdrawal left child usable")
+	// Finished downstream work stays finished; only the withdrawn step reopens.
+	live := e.inspectPlan(s.taskPlan(r.Task)).Steps
+	if live[1].State != "complete" || live[0].State == "complete" {
+		t.Fatal("withdrawal undid finished downstream work or left the gate complete", live[0].State, live[1].State)
 	}
 	input.Revision = 2
 	input.Withdraw = false
@@ -204,8 +205,8 @@ func TestMilestoneHumanBoundaryAndResume(t *testing.T) {
 	completePlanWorker(t, e, step)
 	reviewPlanStep(t, e, step, "pass")
 	planDispatch(e)
-	if planStepByKey(t, s, "R2").Run == dependent.Run {
-		t.Fatal("dependent not regenerated")
+	if planStepByKey(t, s, "R2").Run != dependent.Run || s.taskPlan(r.Task).State != "complete" {
+		t.Fatal("re-confirmation regenerated finished work or left the plan open")
 	}
 }
 func TestMilestoneHTTPAndOwnership(t *testing.T) {
@@ -311,5 +312,32 @@ func TestMilestoneChangeDuringIndependentReview(t *testing.T) {
 	planDispatch(e)
 	if planStepByKey(t, s, "R2").Run == "" {
 		t.Fatal("fresh review failed to resume dependents")
+	}
+}
+
+func TestRoutinePlansDoNotDeclareHumanGatesAndConfirmationIsOneClick(t *testing.T) {
+	s, e, task, root := fixture(t)
+	input := planFixtureInput()
+	input.Steps = input.Steps[:1]
+	input.Steps[0].Requirements = []PlanRequirement{{Key: "gate", Kind: "human-evidence", Target: "fixture:acceptance", Criteria: "Brian agrees"}}
+	task.Completion = selectedCompletion("routine")
+	must(t, s.Put("assignment", task.Org, "", task.State, task.ID, task))
+	if _, err := e.saveExecutionPlan(root, input); err == nil || !strings.Contains(err.Error(), "human-evidence") {
+		t.Fatal("routine plan accepted a human gate", err)
+	}
+	// Under reviewed, a human confirms with one click; the observation fields are optional.
+	s2, e2, r, _ := milestoneFixture(t, "human-evidence")
+	w := NewWeb(s2, e2, false)
+	p := s2.taskPlan(r.Task)
+	values := url.Values{"task": {r.Task}, "revision": {fmt.Sprint(p.Revision)}, "action": {"milestone"}, "run": {r.ID}, "requirement": {"gate"}, "kind": {"human-evidence"}, "target": {"fixture:release/v1"}, "evidence_revision": {"0"}}
+	req := httptest.NewRequest("POST", "/plan-action?org=org", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	must(t, w.executionPlanAction(req, Page{Org: Organization{ID: "org"}, User: User{ID: "owner", Name: "Brian"}}))
+	v := s2.milestoneEvidence(r.ID, "gate")
+	if v.Summary != "Confirmed by Brian" || v.Reference != "adc:human:owner" || v.ObservedAt == "" || v.Actor != "human:owner" {
+		t.Fatal("one-click confirmation did not record defaults", v)
+	}
+	if e2.milestoneMissing(r) != "" {
+		t.Fatal("confirmation did not satisfy the gate")
 	}
 }

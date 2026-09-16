@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,14 +31,25 @@ func (w *Web) executionPlanAction(r *http.Request, page Page) error {
 		if err != nil {
 			return fmt.Errorf("invalid evidence revision")
 		}
+		// A human confirming a gate should not have to write an observation report.
+		summary, reference := strings.TrimSpace(r.FormValue("summary")), strings.TrimSpace(r.FormValue("reference"))
+		if summary == "" {
+			summary = "Confirmed by " + page.User.Name
+		}
+		if reference == "" {
+			reference = "adc:human:" + page.User.ID
+		}
 		observedAt := r.FormValue("observed_at")
+		if observedAt == "" {
+			observedAt = now()
+		}
 		for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04"} {
 			if observed, parseErr := time.ParseInLocation(layout, observedAt, time.UTC); parseErr == nil {
 				observedAt = observed.Format(time.RFC3339)
 				break
 			}
 		}
-		_, err = w.Engine.submitMilestone(worker, milestoneInput{Requirement: r.FormValue("requirement"), Kind: r.FormValue("kind"), Target: r.FormValue("target"), Summary: r.FormValue("summary"), Reference: r.FormValue("reference"), ObservedAt: observedAt, Revision: evidenceRevision, Withdraw: r.FormValue("action") == "withdraw-milestone"}, page.User.ID)
+		_, err = w.Engine.submitMilestone(worker, milestoneInput{Requirement: r.FormValue("requirement"), Kind: r.FormValue("kind"), Target: r.FormValue("target"), Summary: summary, Reference: reference, ObservedAt: observedAt, Revision: evidenceRevision, Withdraw: r.FormValue("action") == "withdraw-milestone"}, page.User.ID)
 		return err
 	}
 	if r.FormValue("action") != "start" {

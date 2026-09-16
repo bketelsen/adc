@@ -428,10 +428,10 @@ func TestExecutionPlanChangedPrerequisiteReplaysAfterYield(t *testing.T) {
 	must(t, s.Get(old.Run, &running))
 	running.State = "running"
 	must(t, s.Put("run", running.Org, running.Task, running.State, running.ID, running))
-	var upstream Run
-	must(t, s.Get(r1.Run, &upstream))
-	upstream.Result = "Refreshed prerequisite evidence"
-	must(t, s.Put("run", upstream.Org, upstream.Task, upstream.State, upstream.ID, upstream))
+	// A changed prerequisite output (here a document) invalidates dependents
+	// once it is reviewed again; result text alone does not.
+	changed := Document{ID: "r1-output", Org: root.Org, Task: root.Task, Run: r1.Run, Title: "Contract", Content: "Refreshed prerequisite output", Revision: 1}
+	must(t, s.Put("document", changed.Org, changed.Task, "", changed.ID, changed))
 	reviewPlanStep(t, e, r1, "pass")
 	planDispatch(e)
 	if got := planStepByKey(t, s, "R2"); got.Run != old.Run || got.State != "blocked" {
@@ -564,5 +564,49 @@ func TestExecutionPlanOutstandingReviewChangesBlockGate(t *testing.T) {
 	planDispatch(e)
 	if planStepByKey(t, s, "R2").Run == "" {
 		t.Fatal("resolved current review remained blocked")
+	}
+}
+
+func TestRoutinePlanDependentsPinOutputNotResultText(t *testing.T) {
+	s, e, task, root := fixture(t)
+	task.Completion = selectedCompletion("routine")
+	must(t, s.Put("assignment", task.Org, "", task.State, task.ID, task))
+	input := planFixtureInput()
+	input.Steps = input.Steps[:2]
+	for i := range input.Steps {
+		input.Steps[i].Reviewer = ""
+	}
+	input.Start = true
+	_, err := e.saveExecutionPlan(root, input)
+	must(t, err)
+	planDispatch(e)
+	r1 := planStepByKey(t, s, "R1")
+	completePlanWorker(t, e, r1)
+	planDispatch(e)
+	r2 := planStepByKey(t, s, "R2")
+	if r2.Run == "" {
+		t.Fatal("routine dependent not dispatched")
+	}
+	var upstream Run
+	must(t, s.Get(r1.Run, &upstream))
+	upstream.Result = "Reworded result text"
+	must(t, s.Put("run", upstream.Org, upstream.Task, upstream.State, upstream.ID, upstream))
+	var dependent Run
+	must(t, s.Get(r2.Run, &dependent))
+	if !e.planAllowsDispatch(dependent) || planStepByKey(t, s, "R2").State == "blocked" {
+		t.Fatal("result text change invalidated the dependent")
+	}
+	completePlanWorker(t, e, r2)
+	planDispatch(e)
+	if s.taskPlan(task.ID).State != "complete" {
+		t.Fatal("routine plan did not complete")
+	}
+	// A real output change on the prerequisite still supersedes the dependent.
+	changed := Document{ID: "r1-doc", Org: root.Org, Task: root.Task, Run: r1.Run, Title: "Contract", Content: "New contract", Revision: 1}
+	must(t, s.Put("document", changed.Org, changed.Task, "", changed.ID, changed))
+	planDispatch(e)
+	fresh := planStepByKey(t, s, "R2")
+	if fresh.Run == r2.Run || len(fresh.Attempts) != 1 {
+		t.Fatal("changed prerequisite output did not supersede finished dependent", fresh.State, fresh.Reason)
 	}
 }

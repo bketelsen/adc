@@ -50,7 +50,7 @@ func (e *Engine) pinDecisionAction(requester Run, p decisionActionInput) (*Decis
 			return nil, fmt.Errorf("action requirement must be this executor's manually observed external milestone")
 		}
 	}
-	return &DecisionAction{RequirementDefinition: definition, decisionActionInput: p, Artifact: e.artifactRevision(r), Plan: plan.ID, PlanRevision: plan.Revision, State: "proposed"}, nil
+	return &DecisionAction{RequirementDefinition: definition, decisionActionInput: p, Artifact: e.approvalRevision(r), Plan: plan.ID, PlanRevision: plan.Revision, State: "proposed"}, nil
 }
 
 func sameActionInput(input *decisionActionInput, action *DecisionAction) bool {
@@ -142,7 +142,7 @@ func (e *Engine) recordActionResult(r Run, p actionResultInput) (Decision, error
 	}
 	// Recording an observed fact grants no authority. Artifacts can legitimately
 	// change after execution; retain both pins for final independent verification.
-	d.Action.OutcomeArtifact = e.artifactRevision(r)
+	d.Action.OutcomeArtifact = e.approvalRevision(r)
 	d.Action.State = "done"
 	d.Action.Summary = p.Summary
 	d.Action.OutcomeReference = p.Reference
