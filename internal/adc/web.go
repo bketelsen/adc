@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -169,6 +170,7 @@ func (w *Web) user(r *http.Request) (User, string) {
 func (w *Web) render(rw http.ResponseWriter, p Page) {
 	var b bytes.Buffer
 	if err := w.templates.ExecuteTemplate(&b, "page", p); err != nil {
+		log.Printf("render %s: %v", p.View, err)
 		http.Error(rw, "Unable to render this view", 500)
 		return
 	}

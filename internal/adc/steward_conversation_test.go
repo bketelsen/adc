@@ -68,6 +68,12 @@ func TestStewardConversationCreatesAgentCharterAndRoutines(t *testing.T) {
 	if len(list[Agent](s, "agent", "org")) != 3 || len(s.stewards("org")) != 0 {
 		t.Fatal("proposal created records before approval")
 	}
+	// The task page renders the pending proposal card.
+	rw := httptest.NewRecorder()
+	w.render(rw, Page{View: "task", User: User{ID: "owner", Name: "Owner"}, Org: Organization{ID: "org", Name: "Fixture"}, Task: task, Runs: []Run{run}, Agents: list[Agent](s, "agent", "org"), Decisions: taskDecisions(s, task.ID), Connections: list[Connection](s, "connection", "org")})
+	if rw.Code != 200 || !strings.Contains(rw.Body.String(), "Weekly capacity and backup check") || !strings.Contains(rw.Body.String(), "TrueNAS") {
+		t.Fatal("task page did not render the steward proposal", rw.Code)
+	}
 	must(t, decisionPost(t, w, d, "approve", "", nil))
 	var storage Agent
 	for _, a := range list[Agent](s, "agent", "org") {
