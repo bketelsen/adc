@@ -27,13 +27,17 @@ run: verify
 serve:
 	exec env $(SERVER_ENV) ./bin/adc serve -addr "$(ADC_ADDR)" -data "$(ADC_DATA)"
 
-# Keep development serving independent of the terminal/session that started it.
-.PHONY: start stop status logs
-start: build
-	systemd-run --user --unit=adc-development --collect --service-type=exec --property=WorkingDirectory="$(CURDIR)" --property=Restart=on-failure --property=RestartSec=3 /usr/bin/make serve
+# Keep development serving across terminal sessions and host restarts.
+.PHONY: install-user-service start stop status logs
+install-user-service:
+	mkdir -p "$(HOME)/.config/systemd/user"
+	ln -sfn "$(CURDIR)/deploy/adc.service" "$(HOME)/.config/systemd/user/adc.service"
+	systemctl --user daemon-reload
+start: build install-user-service
+	systemctl --user enable --now adc.service
 stop:
-	systemctl --user stop adc-development
+	systemctl --user stop adc.service
 status:
-	systemctl --user status adc-development
+	systemctl --user status adc.service
 logs:
-	journalctl --user -u adc-development -n 80 --no-pager
+	journalctl --user -u adc.service -n 80 --no-pager

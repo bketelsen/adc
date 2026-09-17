@@ -1,0 +1,16 @@
+[Unit]
+Description=Aide de Camp
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/adc
+ExecStart=/usr/bin/env -i HOME=%h USER=%u LOGNAME=%u SHELL=/bin/bash LANG=en_US.UTF-8 PATH=%h/.local/share/mise/shims:%h/.cargo/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin XDG_CONFIG_HOME=%h/.config XDG_DATA_HOME=%h/.local/share XDG_RUNTIME_DIR=%t SSH_AUTH_SOCK=%t/keyring/ssh COPILOT_CLI_PATH=%h/.local/share/mise/installs/github-github-copilot-cli/1.0.80/copilot ADC_CLAUDE_NODE=%h/.local/share/mise/installs/node/24.19.0/bin/node ADC_CLAUDE_RUNTIME_DIR=%h/projects/adc/runtime/claude %h/projects/adc/bin/adc serve -addr 0.0.0.0:8789 -data %h/projects/adc/.adc
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=60
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -43,10 +43,10 @@ Requirements: Go 1.26 or newer, Git, and an authenticated GitHub Copilot CLI. Cl
 ```sh
 make run     # gofmt check, vet, race tests, build, then serve in the foreground
 make serve   # serve an already-built binary
-make start   # build and run as the transient adc-development systemd user service
+make start   # build, install and enable the persistent adc systemd user service
 ```
 
-The server listens on `127.0.0.1:8789` and keeps its data in `./.adc`. Override `ADC_ADDR`, `ADC_DATA`, `GO`, `GOFMT`, `COPILOT_CLI_PATH`, `ADC_CLAUDE_NODE` or `ADC_CLAUDE_RUNTIME_DIR` on the command line or in a Git-ignored `Makefile.local`. With the user service, `make status`, `make logs` and `make stop` manage it; after an update, `make stop && make start`.
+Foreground serving listens on `127.0.0.1:8789` by default; the installed user service listens on `0.0.0.0:8789`. Both keep data in `./.adc`. Override `ADC_ADDR`, `ADC_DATA`, `GO`, `GOFMT`, `COPILOT_CLI_PATH`, `ADC_CLAUDE_NODE` or `ADC_CLAUDE_RUNTIME_DIR` for foreground commands on the command line or in a Git-ignored `Makefile.local`. The user unit uses the qualified runtime paths in `deploy/adc.service`; `make status`, `make logs` and `make stop` manage it. After an update, use `make stop && make start`. Binding all interfaces exposes ADC to reachable networks, so restrict access at the host or network boundary.
 
 Then, in the browser:
 
